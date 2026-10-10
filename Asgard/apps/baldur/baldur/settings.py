@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import os
+import tempfile
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -267,11 +268,18 @@ def save(values: Dict[str, Any], path: Optional[Path] = None) -> Path:
     data = {"_help": "Baldur's settings. See the Baldur spec for what each one does."}
     data.update(validate(values))
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
-        json.dump(data, fh, indent=2)
-        fh.write("\n")
-    os.replace(tmp, path)
+    # Its own temporary file, not a fixed name: the window reads settings from more than one thread,
+    # and two writers sharing "baldur.json.tmp" would have one rename a file the other already took.
+    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 

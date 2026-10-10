@@ -1,0 +1,15 @@
+{
+  "_help": "Baldur's views in Asgard's shared window. See asgard/ui/registry.py for the format.",
+  "app": "baldur",
+  "name": "Baldur",
+  "subtitle": "Development time from git",
+  "theme": {
+    "light": {"accent": "#9A5B00"},
+    "dark": {"accent": "#E0A44A"}
+  },
+  "backend": "baldur.ui_backend:Backend",
+  "views": [
+    {"id": "week", "title": "This week", "icon": "Wk", "qml": "Week.qml"},
+    {"id": "day", "title": "One day", "icon": "Dy", "qml": "Day.qml"}
+  ]
+}

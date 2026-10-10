@@ -7,7 +7,7 @@ Objects the QML sees (root context properties):
     shell       title, subtitle, version, toast()
     navigation  the sidebar items, the page on screen, bridgeFor(app)
     dashboard   cards from each app's backend.dashboard() and Muninn's tile counts
-    prefs       Settings page: mode, per-app accents, text size, settings files
+    prefs       Settings page: mode, per-app accents, text size, each app's own settings, files
     home        the Apps page (Asgard's own launcher), only when the window is opened with home=True
 
 Rules it keeps:
@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import (Property, QCoreApplication, QEvent, QObject, QProcess, QRunnable, QThreadPool, QTimer,
                             QUrl, Signal, Slot)
-from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon
+from PySide6.QtGui import QDesktopServices, QFontDatabase, QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine, QQmlPropertyMap
 from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -666,8 +666,11 @@ class PrefsController(QObject):
     changed = Signal()
 
     def __init__(self, prefs: prefs_mod.Prefs, themes: ThemeController, apps: List[registry.AppUI],
-                 bridges: Dict[str, Bridge], shell: ShellController, home_app: str) -> None:
+                 bridges: Dict[str, Bridge], shell: ShellController, home_app: str,
+                 home: bool = False) -> None:
         super().__init__()
+        self.has_banner = home          # the warning banner belongs to Asgard's home window only
+        self._banner_font = ""
         self.prefs = prefs
         self.themes = themes
         self.apps = apps
@@ -730,6 +733,57 @@ class PrefsController(QObject):
             return ""
         return "" if ratio >= 4.5 else f"Low contrast ({ratio:.1f}:1); text in this colour is adjusted to stay readable."
 
+    # ---- the warning banner (Asgard's home window) ----
+
+    @Slot(str, result=str)
+    def setBannerText(self, text: str) -> str:
+        """Returns "" when saved, or the reason it wasn't. Empty text hides the banner."""
+        cleaned = prefs_mod.clean_banner_text(text)
+        if len(str(text).strip()) > prefs_mod.BANNER_MAX_TEXT:
+            self.shell.toast(f"Banner text is limited to {prefs_mod.BANNER_MAX_TEXT} characters; the rest was cut.",
+                             "warning")
+        self.prefs.banner.text = cleaned
+        return "" if self._save() else "Not saved; see the message."
+
+    @Slot(result=bool)
+    def resetBannerText(self) -> bool:
+        self.prefs.banner.text = prefs_mod.BANNER_DEFAULT_TEXT
+        return self._save()
+
+    @Slot(bool, result=bool)
+    def setBannerEnabled(self, on: bool) -> bool:
+        self.prefs.banner.enabled = bool(on)
+        return self._save()
+
+    @Slot(bool, result=bool)
+    def setBannerAnimate(self, on: bool) -> bool:
+        self.prefs.banner.animate = bool(on)
+        return self._save()
+
+    @Slot(int, result=bool)
+    def setBannerSpeed(self, speed: int) -> bool:
+        low, high = prefs_mod.BANNER_SPEEDS
+        if not low <= speed <= high:
+            return False
+        self.prefs.banner.speed = int(speed)
+        return self._save()
+
+    def _get_banner_font(self) -> str:
+        if not self._banner_font:
+            self._banner_font = (prefs_mod.pick_banner_font(QFontDatabase.families(), self.prefs.banner.font)
+                                 or str(self.themes.tokens.value("monoFamily") or "monospace"))
+        return self._banner_font
+
+    bannerAvailable = Property(bool, lambda self: self.has_banner, constant=True)
+    bannerShown = Property(bool, lambda self: self.has_banner and self.prefs.banner.shown, notify=changed)
+    bannerEnabled = Property(bool, lambda self: self.prefs.banner.enabled, notify=changed)
+    bannerText = Property(str, lambda self: self.prefs.banner.text, notify=changed)
+    bannerAnimate = Property(bool, lambda self: self.prefs.banner.animate, notify=changed)
+    bannerSpeed = Property(int, lambda self: self.prefs.banner.speed, notify=changed)
+    bannerFont = Property(str, _get_banner_font, constant=True)
+    bannerColors = Property("QVariantMap", lambda self: dict(prefs_mod.BANNER_COLORS,
+                                                              pulseMs=prefs_mod.BANNER_PULSE_MS), constant=True)
+
     def _appearance(self) -> List[Dict[str, Any]]:
         rows = []
         ids = [("", "Asgard", "Dashboard and Settings, and any app without its own colour")] if \
@@ -744,6 +798,41 @@ class PrefsController(QObject):
             rows.append({"app": app_id, "name": name, "detail": detail, "accent": current,
                          "default": default, "custom": custom})
         return rows
+
+    def _app_settings(self) -> List[Dict[str, Any]]:
+        """Each app's own settings section, from its backend (registry.py documents the contract).
+
+        An app that offers none is simply left out, and its files still appear below. Read every time
+        the page asks, so a value changed in the file shows up on Reload.
+        """
+        out: List[Dict[str, Any]] = []
+        for app in self.apps:
+            if not app.backend:
+                continue
+            bridge = self.bridges[app.id]
+            schema = bridge.invoke("settings_schema", [])
+            groups = schema.get("value") if not schema.get("error") else None
+            if not isinstance(groups, list) or not groups:
+                continue
+            values = bridge.invoke("settings_values", [])
+            out.append({"app": app.id, "name": app.name, "groups": groups,
+                        "values": values.get("value") if isinstance(values.get("value"), dict) else values,
+                        "error": values.get("error", "")})
+        return out
+
+    @Slot(str, str, "QVariant", result=str)
+    def setAppSetting(self, app_id: str, key: str, value: Any) -> str:
+        """Save one of an app's own settings. Returns "" when saved, or why it wasn't."""
+        bridge = self.bridges.get(app_id)
+        if bridge is None:
+            return f"There is no app {app_id!r}."
+        if isinstance(value, list):
+            value = [str(v) for v in value]
+        reply = bridge.invoke("set_settings", [{key: value}])
+        if reply.get("error"):
+            return str(reply["error"])
+        self.changed.emit()
+        return ""
 
     def _files(self) -> List[Dict[str, Any]]:
         files = [{"app": "", "label": "UI preferences (colours, mode, text size)", "path": str(self.prefs.path)}]
@@ -762,6 +851,7 @@ class PrefsController(QObject):
     mode = Property(str, lambda self: self.prefs.mode, notify=changed)
     fontSize = Property(int, lambda self: int(self.themes.tokens.value("fontSize") or 13), notify=changed)
     appearance = Property("QVariantList", _appearance, notify=changed)
+    appSettings = Property("QVariantList", _app_settings, notify=changed)
     files = Property("QVariantList", _files, notify=changed)
     warnings = Property("QVariantList", _warnings, notify=changed)
 
@@ -791,7 +881,8 @@ class Shell:
         if home and not single:
             self.home = HomeController(home_backend or home_mod.HomeBackend(), self.shell)
         self.dashboard = Dashboard(self.apps, self.bridges, single)
-        self.prefs_ctl = PrefsController(self.prefs, self.themes, self.apps, self.bridges, self.shell, home_app)
+        self.prefs_ctl = PrefsController(self.prefs, self.themes, self.apps, self.bridges, self.shell, home_app,
+                                         home=self.home is not None)
         self.engine = QQmlApplicationEngine()
         self.qml_warnings: List[str] = []
         self.engine.warnings.connect(self._on_warnings)

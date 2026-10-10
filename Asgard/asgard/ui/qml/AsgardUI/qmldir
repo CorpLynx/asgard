@@ -18,3 +18,5 @@ AppMenuItem 1.0 AppMenuItem.qml
 AppMenuSeparator 1.0 AppMenuSeparator.qml
 AppDialog 1.0 AppDialog.qml
 AppTile 1.0 AppTile.qml
+WarningBanner 1.0 WarningBanner.qml
+SettingField 1.0 SettingField.qml

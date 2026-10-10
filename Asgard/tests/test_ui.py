@@ -139,6 +139,50 @@ class PrefsTests(Home):
         self.assertEqual(len(p.warnings), 4, p.warnings)
 
 
+class BannerPrefsTests(Home):
+    def test_defaults_and_round_trip(self):
+        p = prefs_mod.load()
+        self.assertTrue(p.banner.shown)
+        p.save()
+        self.assertNotIn("banner", json.loads(p.path.read_text(encoding="utf-8")), "defaults aren't written")
+        p.banner.text, p.banner.animate, p.banner.speed = "CHANGE FREEZE", False, 120
+        p.save()
+        again = prefs_mod.load().banner
+        self.assertEqual((again.text, again.animate, again.speed, again.enabled), ("CHANGE FREEZE", False, 120, True))
+
+    def test_empty_text_hides_and_text_is_one_line_and_capped(self):
+        self.assertFalse(prefs_mod.Banner(text="   ").shown)
+        self.assertFalse(prefs_mod.Banner(enabled=False).shown)
+        self.assertEqual(prefs_mod.clean_banner_text(" a\r\nb "), "a  b")
+        self.assertEqual(len(prefs_mod.clean_banner_text("x" * 999)), prefs_mod.BANNER_MAX_TEXT)
+
+    def test_bad_values_warn_and_keep_defaults(self):
+        path = prefs_mod.prefs_path()
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"banner": {"text": 5, "animate": "yes", "speed": 9000, "font": [],
+                                               "blink": True, "_note": "ok"}}), encoding="utf-8")
+        p = prefs_mod.load()
+        self.assertEqual(p.banner, prefs_mod.Banner())
+        self.assertEqual(len(p.warnings), 5, p.warnings)
+        path.write_text(json.dumps({"banner": "on"}), encoding="utf-8")
+        self.assertIn('"banner" must be an object', prefs_mod.load().warnings[0])
+
+    def test_font_choice(self):
+        self.assertEqual(prefs_mod.pick_banner_font(["Arial", "Consolas", "OCR A Extended"]), "OCR A Extended")
+        self.assertEqual(prefs_mod.pick_banner_font(["Arial", "impact"], "Impact"), "impact")
+        self.assertEqual(prefs_mod.pick_banner_font(["Arial", "Consolas"], "Nope"), "Consolas")
+        self.assertEqual(prefs_mod.pick_banner_font(["Arial"]), "")
+
+    def test_every_point_of_the_pulse_reads_on_the_yellow(self):
+        c = prefs_mod.BANNER_COLORS
+        for t in [i / 20 for i in range(21)]:
+            ink = theme.mix(c["bright"], c["dim"], t)
+            self.assertGreaterEqual(theme.contrast(ink, c["background"]), 4.5, ink)
+        self.assertGreaterEqual(theme.contrast(c["still"], c["background"]), 4.5)
+        self.assertGreaterEqual(1000 / prefs_mod.BANNER_PULSE_MS, 0)    # under 3 cycles a second:
+        self.assertLess(1000 / prefs_mod.BANNER_PULSE_MS, 3)
+
+
 class RegistryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

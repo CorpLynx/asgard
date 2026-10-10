@@ -36,8 +36,27 @@ ApplicationWindow {
     palette.toolTipBase: theme.surfaceHigh
     palette.toolTipText: theme.text
 
-    RowLayout {
+    ColumnLayout {
         anchors.fill: parent
+        spacing: 0
+
+    // Asgard's home window only: a yellow warning banner on top and bottom (Settings > Banner).
+    WarningBanner {
+        id: topBanner
+        objectName: "bannerTop"
+        visible: prefs.bannerShown
+        Layout.fillWidth: true
+        text: prefs.bannerText
+        animate: prefs.bannerAnimate
+        speed: prefs.bannerSpeed
+        fontFamily: prefs.bannerFont
+        colors: prefs.bannerColors
+        stripeAtBottom: true
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.fillHeight: true
         spacing: 0
 
         Sidebar {
@@ -75,6 +94,21 @@ ApplicationWindow {
         }
     }
 
+    WarningBanner {
+        id: bottomBanner
+        objectName: "bannerBottom"
+        visible: prefs.bannerShown
+        Layout.fillWidth: true
+        text: prefs.bannerText
+        animate: prefs.bannerAnimate
+        speed: prefs.bannerSpeed
+        fontFamily: prefs.bannerFont
+        colors: prefs.bannerColors
+        stripeAtBottom: false
+        reverse: true
+    }
+    }
+
     onActiveChanged: {
         if (active && pageLoader.item && typeof pageLoader.item.refresh === "function")
             pageLoader.item.refresh()
@@ -83,6 +117,10 @@ ApplicationWindow {
     // For tests and diagnostics: read the page without Python holding a reference to it.
     function pageReady() { return pageLoader.status === Loader.Ready && pageLoader.item !== null }
     function pageValue(name) { return pageLoader.item ? pageLoader.item[name] : undefined }
+    function bannerInfo(which) {
+        var b = which === "top" ? topBanner : bottomBanner
+        return { "visible": b.visible, "text": b.text, "animate": b.animate }
+    }
     function pageCall(name) {
         if (!pageLoader.item || typeof pageLoader.item[name] !== "function")
             return false
@@ -95,6 +133,7 @@ ApplicationWindow {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 20
+        anchors.bottomMargin: 20 + (bottomBanner.visible ? bottomBanner.height : 0)
     }
 
     Connections {

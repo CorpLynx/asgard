@@ -29,6 +29,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import tempfile
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -291,6 +292,59 @@ def build_config(overrides: Dict[str, Any]) -> Dict[str, Any]:
     """Defaults + overrides, validated. Used by tests and tooling."""
     cfg = _merge(DEFAULTS, _strip_comments(overrides))
     validate(cfg)
+    return cfg
+
+
+def set_values(changes: Dict[str, Any], path: Optional[Path] = None) -> Dict[str, Any]:
+    """Change settings by dotted key ("jira.base_url", "muninn.post_approved") and save the file.
+
+    What it keeps to:
+    - The file stays the person's: the comments ("_" keys) and anything this doesn't touch are left
+      exactly as they were, and a key whose value equals the default is still written, because they
+      asked for it.
+    - Nothing is written until the whole config passes validate(), so one bad value can't leave a file
+      Odin then refuses to start from. The ConfigError says what to change.
+    - One temporary file and a rename, so a crash can't leave half a config behind.
+    Returns the saved config (defaults merged in), as load_config would.
+    """
+    path = Path(path) if path else default_config_path()
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        raw = {}
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"{path} is not valid JSON ({exc}), so it wasn't changed. Fix the file first.") from None
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{path} must hold a JSON object, so it wasn't changed.")
+    updated = copy.deepcopy(raw)
+    for dotted, value in changes.items():
+        parts = str(dotted).split(".")
+        if not all(parts) or any(p.startswith("_") for p in parts):
+            raise ConfigError(f"{dotted!r} isn't a setting name.")
+        here = updated
+        for part in parts[:-1]:
+            nested = here.get(part)
+            if not isinstance(nested, dict):
+                nested = {}
+                here[part] = nested
+            here = nested
+        here[parts[-1]] = value
+    cfg = build_config(updated)              # raises ConfigError before anything is written
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Its own temporary file, so two writers (the window reads settings from more than one thread)
+    # can't have one rename a file the other already took.
+    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
+            json.dump(updated, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    cfg["data_dir"] = str(path.parent)
     return cfg
 
 

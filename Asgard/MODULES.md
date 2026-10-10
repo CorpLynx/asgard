@@ -24,7 +24,7 @@ What always stays standard library: `asgard/muninn/` (every app and Odin import 
 | | |
 | --- | --- |
 | Pin | `PySide6-Essentials==6.10.3` (the last release that supports Python 3.9). It brings `shiboken6` at the same version |
-| Used in | `asgard/ui/shell.py` (the shared window), `asgard/ui/__init__.py` (`available()`, which checks the window can open before the launcher picks it), and the QML it loads: `asgard/ui/qml/` and `apps/*/ui/*.qml` |
+| Used in | `asgard/ui/shell.py` (the shared window), `asgard/ui/__init__.py` (`available()`, which checks the window can open before the launcher picks it), and the QML it loads: `asgard/ui/qml/` and `apps/*/ui/*.qml` (Odin, Baldur, Heimdall and Ysildir). Each app's backend under `apps/*/ui_backend.py` is plain Python and needs no Qt |
 | Needed for | Asgard's shared window: Heimdall's tile, `python -m asgard.ui`. The launcher, Muninn and every command line work without it |
 | Native code | Yes: Qt DLLs and `.pyd` files. App Control must allow them |
 | Approval | Approved by the owner, Oct 2026 (in use on-prem) |

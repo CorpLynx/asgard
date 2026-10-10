@@ -43,6 +43,7 @@ To upgrade, close Asgard, extract the new zip and run its setup: it replaces `%L
 
 ## Using Asgard
 
+- **Settings** holds Asgard's own look and each app's settings: Odin's Jira address, which meetings count, its tour of duty; Baldur's repository folders, how a day is estimated, your working hours. Changing one saves it straight away, and the app's own rules decide: a value it won't take is refused with the reason, and nothing is written. Rules and templates are still edited in the file, which the same page opens.
 - **Click a tile** to open the app. Tiles marked **Coming soon** aren't built yet.
 - **Odin** ships with Asgard. Its tile opens Today (setup, the last run, what waits), Meetings and My issues; see [Odin](#odin-meetings-and-jira) below.
 - **Right-click a tile** to change its location, open its folder, or view its log.
@@ -176,6 +177,20 @@ ysildir.cmd tools --on baldur_day              turn a tool on, then restart the 
 
 Each tool's data flow needs your ISSO's approval, so each has a switch in `%LOCALAPPDATA%\Asgard\settings\ysildir.json`. Tools that send Muninn data (commit subjects, Jira summaries, times) start off. [docs/integration/ysildir.md](docs/integration/ysildir.md) lists every tool, what it sends and its command-line equivalent.
 
+## Trying Odin with no Jira
+
+A pretend Jira runs on your own machine, so Odin can be tried end to end before it touches the real one:
+
+```
+python tools\fake_jira_server.py                     # prints the config to paste, and a token
+python tools\fake_jira_server.py --state jira.json   # keep what Odin creates across restarts
+```
+
+It listens on 127.0.0.1 only, needs the token it prints, and serves what Odin asks for: issues, JQL
+search, worklogs and transitions. Paste the config it shows into `%LOCALAPPDATA%\Asgard\odin\config.json`,
+set `JIRA_PAT` to the token, then `odin check`, `odin preview` and `odin push` all work against it.
+It is a development tool: it isn't Jira, and it isn't in the packaged build.
+
 ## Heimdall from the command line
 
 Heimdall fills a security change request in Edge from a saved template, then stops so you can review it and click **Submit** yourself. Its tile opens Heimdall's window (see below), which does everything these commands do; the commands also work on their own:
@@ -210,13 +225,16 @@ Heimdall's tile opens Asgard's shared window: a sidebar with **Dashboard**, the 
 
 The window needs **PySide6-Essentials** (approved, pinned in `requirements.txt`) for the Python the tile uses. Without it the tile says what to install; the command-line tools don't need it.
 
+**The banner.** Asgard's own window has a yellow banner along the top and bottom with a message that scrolls and pulses red. Change the message under **Settings > Banner** (empty hides it), or turn off **Scroll and pulse** to keep it still. Click a banner, or Tab to it and press Space, to pause it. The tkinter window (used when PySide6 can't load) shows the same banners; its **...** menu has **Edit banner text**, **Hide banners** and **Stop banner scrolling**. The font is the first of OCR A Extended, Agency FB, Bahnschrift and Consolas that the computer has; set `"font"` to choose another. App windows such as Heimdall's don't show it.
+
 Your colour and text-size choices are in `%LOCALAPPDATA%\Asgard\settings\ui.json`, which you can also edit by hand:
 
 ```json
 {
   "mode": "dark",
   "theme": {"fontSize": 14},
-  "apps": {"heimdall": {"accent": "#6B4FBF"}, "odin": {"dark": {"accent": "#7FA7E8"}}}
+  "apps": {"heimdall": {"accent": "#6B4FBF"}, "odin": {"dark": {"accent": "#7FA7E8"}}},
+  "banner": {"text": "CHANGE FREEZE FRIDAY 1700", "enabled": true, "animate": true, "speed": 80, "font": ""}
 }
 ```
 

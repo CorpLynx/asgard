@@ -164,6 +164,130 @@ ScrollPage {
     }
 
     Card {
+        id: bannerCard
+        objectName: "bannerCard"
+        visible: prefs.bannerAvailable
+        Layout.fillWidth: true
+        title: "Banner"
+        subtitle: "The yellow banner along the top and bottom of Asgard's window. Type any message and press "
+                  + "Apply; leave it empty to hide the banners. Click a banner to pause it."
+        property string problem: ""
+
+        RowLayout {
+            spacing: 8
+            Layout.fillWidth: true
+            TextField {
+                id: bannerField
+                objectName: "bannerField"
+                text: prefs.bannerText
+                Layout.fillWidth: true
+                maximumLength: 300
+                placeholderText: "Empty hides the banners"
+                Accessible.name: "Banner message"
+                onAccepted: bannerCard.problem = prefs.setBannerText(text)
+            }
+            AppButton {
+                text: "Apply"
+                kind: "primary"
+                onClicked: bannerCard.problem = prefs.setBannerText(bannerField.text)
+            }
+            AppButton {
+                text: "Reset"
+                kind: "ghost"
+                onClicked: {
+                    bannerCard.problem = ""
+                    prefs.resetBannerText()
+                    bannerField.text = prefs.bannerText
+                }
+            }
+        }
+        Text {
+            visible: bannerCard.problem.length > 0
+            text: bannerCard.problem
+            color: theme.error
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontSize - 2
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+        }
+
+        RowLayout {
+            spacing: 16
+            CheckBox {
+                text: "Show banners"
+                checked: prefs.bannerEnabled
+                onToggled: prefs.setBannerEnabled(checked)
+            }
+            CheckBox {
+                text: "Scroll and pulse"
+                checked: prefs.bannerAnimate
+                Accessible.description: "Turn off to keep the banner text still"
+                onToggled: prefs.setBannerAnimate(checked)
+            }
+            Text {
+                text: "Speed"
+                color: theme.text
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontSize
+            }
+            SpinBox {
+                from: 20
+                to: 400
+                stepSize: 20
+                value: prefs.bannerSpeed
+                editable: true
+                enabled: prefs.bannerAnimate
+                Accessible.name: "Banner speed in pixels per second"
+                onValueModified: prefs.setBannerSpeed(value)
+            }
+            Text {
+                text: "pixels a second. Font: " + prefs.bannerFont
+                color: theme.textMuted
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontSize - 1
+            }
+        }
+    }
+
+    // Each app's own settings, built from what its backend declares (asgard/ui/registry.py). An app
+    // that declares none isn't shown here; its file is still listed below.
+    Repeater {
+        model: prefs.appSettings
+        delegate: ColumnLayout {
+            id: appBlock
+            required property var modelData
+            spacing: 16
+            Layout.fillWidth: true
+
+            Repeater {
+                model: appBlock.modelData.groups
+                delegate: Card {
+                    id: group
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    title: group.index === 0 ? appBlock.modelData.name + ": " + group.modelData.title
+                                             : group.modelData.title
+                    subtitle: group.modelData.help || ""
+                    accentColor: group.index === 0 ? (themeCtl.appAccents[appBlock.modelData.app] || "transparent")
+                                                   : "transparent"
+
+                    Repeater {
+                        model: group.modelData.fields
+                        delegate: SettingField {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            app: appBlock.modelData.app
+                            field: modelData
+                            value: (appBlock.modelData.values || {})[modelData.key]
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Card {
         Layout.fillWidth: true
         title: "Settings files"
         subtitle: "Each app keeps its settings in a file in Asgard's data folder. Open one to edit it."

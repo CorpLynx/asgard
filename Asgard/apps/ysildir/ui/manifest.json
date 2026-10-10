@@ -1,0 +1,14 @@
+{
+  "_help": "Ysildir's view in Asgard's shared window. See asgard/ui/registry.py for the format.",
+  "app": "ysildir",
+  "name": "Ysildir",
+  "subtitle": "Asgard for your AI client (MCP)",
+  "theme": {
+    "light": {"accent": "#5C6B1A"},
+    "dark": {"accent": "#AFC257"}
+  },
+  "backend": "ysildir.ui_backend:Backend",
+  "views": [
+    {"id": "tools", "title": "AI tools", "icon": "Ai", "qml": "Tools.qml"}
+  ]
+}

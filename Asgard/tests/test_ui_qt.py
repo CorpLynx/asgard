@@ -232,6 +232,37 @@ class WindowTests(unittest.TestCase):
         self.assertIsNone(s.home)
         self.assertNotIn("home", s.navigation.pages)
 
+    def banner_value(self, s, name, prop):
+        which = "top" if name == "bannerTop" else "bottom"
+        info = QMetaObject.invokeMethod(s.engine.rootObjects()[0], "bannerInfo", Q_RETURN_ARG("QVariant"),
+                                        Q_ARG("QVariant", which))
+        info = info.toVariant() if hasattr(info, "toVariant") else info
+        return info[prop]
+
+    def test_home_window_has_both_banners_and_settings_edit_them_live(self):
+        s = self.open(home=True)
+        for name in ("bannerTop", "bannerBottom"):
+            self.assertTrue(self.banner_value(s, name, "visible"), name)
+            self.assertIn("EDIT THIS MESSAGE", self.banner_value(s, name, "text"))
+        self.assertEqual(s.prefs_ctl.setBannerText("  CHANGE FREEZE\nFRIDAY  "), "")
+        pump()
+        self.assertEqual(self.banner_value(s, "bannerTop", "text"), "CHANGE FREEZE FRIDAY")
+        self.assertTrue(s.prefs_ctl.setBannerAnimate(False))
+        pump()
+        self.assertFalse(self.banner_value(s, "bannerBottom", "animate"))
+        self.assertTrue(s.prefs_ctl.setBannerEnabled(False))
+        pump()
+        self.assertFalse(self.banner_value(s, "bannerTop", "visible"))
+        self.assertFalse(s.prefs_ctl.setBannerSpeed(5))
+        saved = json.loads((self.dir / "settings" / "ui.json").read_text(encoding="utf-8"))["banner"]
+        self.assertEqual((saved["text"], saved["animate"], saved["enabled"]), ("CHANGE FREEZE FRIDAY", False, False))
+        self.visit_all(s)
+
+    def test_banners_are_only_on_the_home_window(self):
+        s = self.open(app="heimdall")
+        self.assertFalse(self.banner_value(s, "bannerTop", "visible"))
+        self.assertFalse(s.prefs_ctl.bannerAvailable)
+
     def test_unknown_app_is_refused(self):
         from asgard.ui import registry
         with self.assertRaises(registry.RegistryError):
@@ -260,6 +291,30 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(s.themes._get_accents()["odin"], "#2B7A4B")
         self.assertTrue(s.prefs_ctl.setMode("dark"))
         self.assertEqual(s.themes.tokens.value("mode"), "dark")
+        self.assertEqual(s.qml_warnings, [])
+
+    def test_settings_shows_each_apps_own_settings_and_saves_one(self):
+        """The page is built from what the backends declare, so a new field needs no QML change."""
+        s = self.open()
+        sections = s.prefs_ctl.appSettings
+        self.assertEqual([x["app"] for x in sections], ["baldur", "odin"])
+        for section in sections:
+            with self.subTest(section["app"]):
+                self.assertTrue(section["groups"])
+                keys = [f["key"] for g in section["groups"] for f in g["fields"]]
+                self.assertTrue(keys)
+                for key in keys:
+                    self.assertIn(key, section["values"])
+
+        self.assertEqual(s.prefs_ctl.setAppSetting("baldur", "history_days", 200), "")
+        self.assertEqual(next(x for x in s.prefs_ctl.appSettings if x["app"] == "baldur")
+                         ["values"]["history_days"], 200)
+        self.assertIn("one of", s.prefs_ctl.setAppSetting("baldur", "policy", "nonsense"))
+        self.assertIn("no app", s.prefs_ctl.setAppSetting("nobody", "x", 1))
+
+        s.navigation.go("settings")
+        pump()
+        self.assertTrue(self.page_ready(s))
         self.assertEqual(s.qml_warnings, [])
 
     def test_font_size_setting_reaches_the_tokens(self):

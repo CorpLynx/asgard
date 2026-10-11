@@ -87,10 +87,42 @@ class MovedMeetingTests(OdinTestCase):
         self.assertIn("its worklog keeps the old length", self.log)
         self.assertEqual([w["timeSpentSeconds"] for w in self.jira.worklogs["PROJ-901"]], [3600])
 
-    def test_without_a_window_the_old_time_isnt_swept_so_the_record_keeps_its_link(self):
+    def test_without_a_window_nothing_says_the_old_time_is_gone_so_it_is_pushed_as_before(self):
+        """Review (Oct 10) finding 2: without a full read of the old time, a copy with the same id
+        could be taken for the meeting moved, and its time would never be logged."""
         result = self.run_twice(meeting(14), meeting(15), window=None)
-        self.assertEqual((result.created, result.moved), ([], ["PROJ-901"]))
-        self.assertEqual(self.records(), [("PROJ-901", "GID-1|2026-09-21T14:00:00Z", 0)])
+        self.assertEqual((result.created, result.moved), (["PROJ-902"], []))
+
+    def test_a_copy_outside_the_window_is_another_meeting(self):
+        """Review finding 2: the daily export reads yesterday and today, so a copy made a week later
+        (same id, the original still on the calendar) was swallowed as the original moved."""
+        week = (datetime(2026, 9, 28, 4, 0, tzinfo=timezone.utc), datetime(2026, 9, 28, 22, 0, tzinfo=timezone.utc))
+        self.push([meeting(14)], config(), self.jira, now=NOW, window=WINDOW)
+        copy = meeting(14)
+        copy.start_utc, copy.end_utc = copy.start_utc + timedelta(days=7), copy.end_utc + timedelta(days=7)
+        copy.key = "GID-1|2026-09-28T14:00:00Z"
+        result = self.push([copy], config(), self.jira, now=datetime(2026, 9, 29, 12, 0, tzinfo=timezone.utc),
+                           window=week)
+        self.assertEqual((result.created, result.moved), (["PROJ-902"], []))
+
+    def test_once_linked_it_is_found_without_a_window(self):
+        self.run_twice(meeting(14), meeting(15))
+        again = self.push([meeting(15)], config(), self.jira, now=NOW, window=None)
+        self.assertEqual((again.created, again.moved), ([], ["PROJ-901"]))
+
+    def test_a_one_off_with_the_id_of_a_series_is_another_meeting(self):
+        """Review finding 2: a one-off item sharing a series' id (its recurrence removed, say) was taken
+        for one of the series' occurrences moved."""
+        self.push([meeting(10, recurring=True), meeting(11, recurring=True)], config(), self.jira, now=NOW,
+                  window=WINDOW)
+        result = self.push([meeting(15)], config(), self.jira, now=NOW, window=WINDOW)
+        self.assertEqual((len(result.created), result.moved), (1, []))
+
+    def test_an_id_with_a_bar_in_it_doesnt_match_a_shorter_one(self):
+        """Review finding 2: a record of id 'A|B' was matched by a meeting of id 'A'."""
+        self.push([meeting(14, gid="A|B")], config(), self.jira, now=NOW, window=WINDOW)
+        result = self.push([meeting(15, gid="A")], config(), self.jira, now=NOW, window=WINDOW)
+        self.assertEqual((len(result.created), result.moved), (1, []))
 
     def test_a_record_with_no_calendar_event_is_linked(self):
         con = self.open()
@@ -133,7 +165,7 @@ class MovedMeetingTests(OdinTestCase):
     def test_a_dry_run_shows_it_moved_and_changes_nothing(self):
         self.push([meeting(14)], config(), self.jira, now=NOW, window=WINDOW)
         with self.assertLogs("odin", "INFO") as logs:
-            result = self.push([meeting(15)], config(), dry_run=True, now=NOW)
+            result = self.push([meeting(15)], config(), dry_run=True, now=NOW, window=WINDOW)
         self.assertEqual((result.planned, result.moved), (0, ["PROJ-901"]))
         self.assertIn("MOVED", "\n".join(logs.output))
         self.assertEqual(self.records(), [("PROJ-901", "GID-1|2026-09-21T14:00:00Z", 0)])

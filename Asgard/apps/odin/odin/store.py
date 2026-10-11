@@ -209,21 +209,55 @@ def find_subtask(con: sqlite3.Connection, m: Meeting) -> Optional[sqlite3.Row]:
                        "ORDER BY meeting_key = ? DESC, id LIMIT 1", (m.key, m.content_hash, m.key)).fetchone()
 
 
+_KEY_START = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+
+
+def _occurrence_of(key: str, global_id: str) -> bool:
+    """Whether key is `<global_id>|<start>`, as every exporter builds it."""
+    return key.startswith(global_id + "|") and bool(_KEY_START.fullmatch(key[len(global_id) + 1:]))
+
+
 def find_moved(con: sqlite3.Connection, m: Meeting) -> Optional[sqlite3.Row]:
     """The record of this meeting from before it moved, if it is a one-off meeting that has one.
 
     A one-off meeting keeps its calendar id when its organizer moves it, and every exporter builds
-    its key as `<id>|<start>`, so the earlier record's key starts with the same id. An occurrence of
-    a series shares the series' id with every other occurrence, so it is never matched this way;
-    neither is a meeting whose source didn't say (no id, or is_recurring unknown), nor one whose id
-    isn't the start of its own key (an export that doesn't build keys this way).
+    its key as `<id>|<start>`, so the earlier record's key starts with the same id. Matched only
+    when there's exactly one such record: an occurrence of a series shares the series' id with
+    every other occurrence, so several records mean a series. Never matched: a meeting whose source
+    didn't say (no id, or is_recurring unknown), or whose key isn't `<id>|<start>`. Whether it really
+    moved, rather than being another item with the same id, is left_old_time's question.
     """
-    if not m.global_id or m.is_recurring is not False or not m.key.startswith(m.global_id + "|"):
+    if not m.global_id or m.is_recurring is not False or not _occurrence_of(m.key, m.global_id):
         return None
-    prefix = m.global_id + "|"
     # A range on the unique index: every key that starts with "<id>|" ('}' follows '|').
-    return con.execute("SELECT * FROM meeting_subtasks WHERE meeting_key >= ? AND meeting_key < ? "
-                       "ORDER BY id DESC LIMIT 1", (prefix, m.global_id + "}")).fetchone()
+    rows = [r for r in con.execute("SELECT * FROM meeting_subtasks WHERE meeting_key >= ? AND meeting_key < ?",
+                                   (m.global_id + "|", m.global_id + "}"))
+            if _occurrence_of(r["meeting_key"], m.global_id)]
+    return rows[0] if len(rows) == 1 else None
+
+
+def left_old_time(con: sqlite3.Connection, rec: sqlite3.Row, m: Meeting,
+                  window: Optional[Tuple[datetime, datetime]], on_calendar: Iterable[str]) -> bool:
+    """Whether rec's meeting is known to be gone from its old time, so m is that meeting, moved.
+
+    Known when its calendar event was swept (an export that covered the old time didn't have it),
+    when the record already points at m's own event (an earlier run linked it), or when this export
+    read the old time in full and the old key isn't in it. Otherwise m may be another item with the
+    same id (a copy can be), and it's pushed as before: a second sub-task can be deleted in Jira,
+    but a meeting wrongly taken for a moved one never has its time logged.
+    """
+    if rec["meeting_key"] in on_calendar:
+        return False
+    if rec["calendar_event_id"] is not None:
+        event = con.execute("SELECT external_id, deleted_at FROM calendar_events WHERE id = ?",
+                            (rec["calendar_event_id"],)).fetchone()
+        if event is not None and (event["deleted_at"] is not None or event["external_id"] == m.key):
+            return True
+    if window is None:
+        return False
+    start = muninn.from_ts(rec["started_at"])
+    end = start + timedelta(minutes=max(1, int(rec["minutes"])))
+    return start < window[1] and end > window[0]          # the sweep's test: it overlaps the window
 
 
 def link_moved(con: sqlite3.Connection, record_id: int, event_id: int, issue_key: str) -> bool:
@@ -345,6 +379,17 @@ def pending_meeting_worklogs(con: sqlite3.Connection, now: Optional[datetime] = 
         f"AND NOT EXISTS (SELECT 1 FROM worklogs l WHERE l.state IN ('sending', 'posted', 'deleted') AND {_LINKED}) "
         f"AND (SELECT count(*) FROM worklogs l WHERE l.state = 'failed' AND {_LINKED}) < ? "
         f"ORDER BY ms.started_at LIMIT ?", (since, MAX_WORKLOG_ATTEMPTS, limit)).fetchall()
+
+
+def will_retry(con: sqlite3.Connection, worklog_id: int) -> bool:
+    """Whether a meeting worklog Jira doesn't have will be sent again: its sub-task is still among
+    pending_meeting_worklogs (made within RETRY_DAYS, refused fewer than MAX_WORKLOG_ATTEMPTS times)."""
+    pending = [r["id"] for r in pending_meeting_worklogs(con, limit=900)]
+    if not pending:
+        return False
+    return con.execute(f"SELECT 1 FROM meeting_subtasks ms, worklogs l WHERE l.id = ? "
+                       f"AND ms.id IN ({','.join('?' * len(pending))}) AND {_LINKED}",
+                       (worklog_id, *pending)).fetchone() is not None
 
 
 def still_pending(con: sqlite3.Connection, record_id: int) -> bool:

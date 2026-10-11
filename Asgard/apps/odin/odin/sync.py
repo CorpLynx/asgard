@@ -11,8 +11,9 @@ Order of operations, and why
     2. Router decides: skip with a reason, or create under a parent.
     3. store.find_subtask short-circuits anything already pushed (and, before the one-time import,
        anything state.db or the journal knows). A one-off meeting whose organizer moved it is found by
-       its calendar id (store.find_moved): reported as MOVED, never made again, and nothing in Jira is
-       changed, because Odin doesn't edit issues.
+       its calendar id (store.find_moved), once its old time is known to be gone (left_old_time):
+       reported as MOVED, never made again, and nothing in Jira is changed, because Odin doesn't
+       edit issues.
     4. Honour max_creates_per_run, counting created + recovered + planned.
     5. Look in Jira for this meeting's label, then create, then record in Muninn *immediately*,
        then fetch the new sub-task into Muninn, then log the meeting's time, then transition. A
@@ -164,12 +165,14 @@ def run(meetings: Iterable[Meeting], cfg: Dict[str, Any], con: sqlite3.Connectio
         *, data_dir: Path, dry_run: bool = False, now: Optional[datetime] = None,
         event_ids: Optional[Dict[str, int]] = None, ctx: Optional[mo.JiraContext] = None,
         me: Optional[Dict[str, Any]] = None,
-        seen_before: Optional[Callable[[Meeting], Optional[str]]] = None) -> RunResult:
+        seen_before: Optional[Callable[[Meeting], Optional[str]]] = None,
+        window: Optional[Tuple[datetime, datetime]] = None) -> RunResult:
     """Push meetings to Jira as sub-tasks.
 
     con is Muninn (read-only for a dry run). event_ids maps each meeting's key to its row in
     calendar_events (store.store_calendar). ctx is Muninn's Jira context, needed to store each new
     sub-task. seen_before answers for history not yet in Muninn (state.db before its import).
+    window is the range the export read in full (store.export_window), or None.
     """
     if not dry_run and (client is None or ctx is None):
         raise ValueError("A Jira client and Muninn's Jira context are required unless dry_run is set")
@@ -191,7 +194,7 @@ def run(meetings: Iterable[Meeting], cfg: Dict[str, Any], con: sqlite3.Connectio
         subtasks = None if dry_run else stack.enter_context(
             muninn.Run(con, store.APP, ctx.source_id, "meeting-subtasks"))
         _push(meetings, cfg, con, client, result, router, cap, templates, now, dry_run, event_ids, journal,
-              subtasks, ctx, assignee, seen_before, data_dir)
+              subtasks, ctx, assignee, seen_before, data_dir, window)
 
     if result.capped:
         log.warning("Stopped at jira.max_creates_per_run=%d; %d more meeting(s) left for the next run "
@@ -203,7 +206,8 @@ def _push(meetings: Iterable[Meeting], cfg: Dict[str, Any], con: sqlite3.Connect
           result: RunResult, router: Router, cap: int, templates: Dict[str, str], now: datetime, dry_run: bool,
           event_ids: Dict[str, int], journal: store.Journal, subtasks: Optional[muninn.Run],
           ctx: Optional[mo.JiraContext], assignee: Optional[Dict[str, Any]],
-          seen_before: Optional[Callable[[Meeting], Optional[str]]], data_dir: Path) -> None:
+          seen_before: Optional[Callable[[Meeting], Optional[str]]], data_dir: Path,
+          window: Optional[Tuple[datetime, datetime]] = None) -> None:
     j = cfg["jira"]
     seen = set()
     meetings = sorted(meetings, key=lambda x: x.start_utc)
@@ -242,9 +246,7 @@ def _push(meetings: Iterable[Meeting], cfg: Dict[str, Any], con: sqlite3.Connect
             continue
 
         moved = store.find_moved(con, m)
-        # A record whose meeting is still in this export at its old time belongs to another meeting
-        # that shares the id (a copied item can), not to this one before it moved.
-        if moved is not None and moved["meeting_key"] not in on_calendar:
+        if moved is not None and store.left_old_time(con, moved, m, window, on_calendar):
             result.moved.append(moved["issue_key"])
             was = muninn.from_ts(moved["started_at"]).astimezone()
             change = f"was {was:%Y-%m-%d %H:%M}"

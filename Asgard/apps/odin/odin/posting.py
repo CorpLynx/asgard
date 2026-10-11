@@ -111,9 +111,25 @@ def settle_stuck(con: sqlite3.Connection, client: JiraClient, timeout: float = 3
             continue
         mo.resolve_stuck(con, stuck["worklog_id"], str(found["id"]) if found else None, searched=True)
         result.settled += 1
-        log.info("  SETTLED  %-14s %s", stuck["key"],
-                 f"posted as {found['id']}" if found else "not in Jira; offered again")
+        if found:
+            outcome = f"posted as {found['id']}"
+        elif offered_again(con, stuck["worklog_id"]):
+            outcome = "not in Jira; offered again"
+        else:
+            outcome = "not in Jira, and too old to send again: log it by hand if it belongs there"
+        log.info("  SETTLED  %-14s %s", stuck["key"], outcome)
     return result
+
+
+def offered_again(con: sqlite3.Connection, worklog_id: int) -> bool:
+    """After a post is recorded as not in Jira: whether a run will send its time again. An approved
+    day is, while it's due; a meeting's time only while store.will_retry says so (RETRY_DAYS)."""
+    row = con.execute("SELECT origin, proposal_id FROM worklogs WHERE id = ?", (worklog_id,)).fetchone()
+    if row is None:
+        return False
+    if row["origin"] == "baldur":
+        return any(d["proposal_id"] == row["proposal_id"] for d in mo.posts_due(con))
+    return store.will_retry(con, worklog_id)
 
 
 # --------------------------------------------------------------------------

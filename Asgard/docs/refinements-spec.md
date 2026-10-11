@@ -21,7 +21,7 @@ Migrations 0004 and 0005 haven't shipped (`HANDOFF.md`), so they may still chang
 | `Odin/graph-app` | `global_id = iCalUId`; `is_recurring` from Graph's `type` (`singleInstance` false, `occurrence` or `exception` true, otherwise unknown) |
 | `Odin/playwright-app`, CSV | OWA's JSON as mapped gives no series type and the CSV no id: both stay as today |
 | `models.Meeting`, `sources.load_export` | Carry the two fields; anything but a real boolean for `is_recurring` reads as unknown |
-| `sync.py` | When the existing checks (Muninn's record by key or hash, the journal, `state.db`) find nothing, a meeting with a `global_id` and `is_recurring` false is looked up by that id: a record whose `meeting_key` starts with `<global_id>|`. Found means it is the same meeting before it moved: nothing is created, the run reports `MOVED` with the issue, both times, and both lengths when they differ, and says the sub-task and worklog were left as they are |
+| `sync.py` | When the existing checks (Muninn's record by key or hash, the journal, `state.db`) find nothing, a meeting with a `global_id` and `is_recurring` false is looked up by that id: a record whose `meeting_key` starts with `<global_id>|`. Found means it is the same meeting before it moved: nothing is created, the run reports `MOVED` with the issue, both times, and both lengths when they differ, and says the sub-task and worklog were left as they are. After the review (finding 2): only when exactly one record has the id, the rest of both keys is a timestamp, and the old time is known to be gone (its calendar event was swept, the record already points at this meeting's event, or this export read the old time in full and it isn't there); otherwise the meeting is pushed as before, because a meeting wrongly taken for a moved one never has its time logged |
 | The record's calendar link | If the record's calendar event is gone (the export swept it) or it has none, the record is linked to the moved meeting's event, as `store.link_event` already does for history from `state.db`. The v5 trigger allows exactly this change |
 | Results | `RunResult.moved`, the summary line, `last_run.json` (`moved`) and a dry run (`odin preview` shows `MOVED` too) |
 
@@ -54,8 +54,8 @@ A database already at v4 or v5 from an earlier copy reports the two triggers as 
 | --- | --- |
 | `odin settle` | Lists the posts in doubt: an id, the issue, the start, the length, how long ago, and the marker to search for in Jira |
 | `odin settle ID` | Asks Jira again by the marker. Found: recorded as posted with Jira's id. Jira answered and it isn't there: recorded as not posted, and the time is offered again. Jira couldn't answer (404, 403, no connection): nothing changes, and it says why and what you can do |
-| `odin settle ID --posted WORKLOG_ID` | You found it in Jira: recorded as posted with that id |
-| `odin settle ID --not-posted` | You checked Jira and it isn't there: recorded as not posted, so its time is offered again. The help and the confirmation say that a post that did land would then be posted twice |
+| `odin settle ID --posted WORKLOG_ID` | You found it in Jira: recorded as posted with that id. After the review (finding 5): when Jira can answer, the worklog has to be on the issue and carry the post's marker, or be the same length (logged by hand) |
+| `odin settle ID --not-posted` | You checked Jira and it isn't there: recorded as not posted, so its time is offered again. The help and the confirmation say that a post that did land would then be posted twice. When no run will send it again (a meeting's time is retried for 14 days), it says so and what to log by hand (review finding 4) |
 
 It takes Odin's run lock, so it never races a run. `odin status` lists each post in doubt with the command to settle it. `odin.cmd` passes `settle` through. The Muninn side is `asgard.muninn.odin.resolve_stuck`, unchanged.
 
@@ -91,6 +91,10 @@ It takes Odin's run lock, so it never races a run. `odin status` lists each post
 **What changes.** Each live artifact is read first. If it hasn't changed since the snapshot was taken, the snapshot's current text is published to it. If it has edits of its own, they're merged by hand with the snapshot's, and both are kept; nothing is lost. The snapshot headers then say the live pages are current. If an artifact can't be read or written from this session, it's left for Brandon and the hand-off says so.
 
 **Done when.** Both live pages match their snapshots, or the reason they don't is written down.
+
+## Review
+
+Steps 1a, 1b and 2 were reviewed independently on Oct 10: [review-2026-10-10-refinements.md](review-2026-10-10-refinements.md). One blocker, four should-fix and one minor finding, all fixed with regression tests.
 
 ## Verification for every step
 

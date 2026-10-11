@@ -306,10 +306,11 @@ class OdinTestCase(unittest.TestCase):
         now = now or self.NOW
         con = self.open(readonly=dry_run)
         if dry_run:
-            return run(meetings, cfg, con, None, data_dir=self.data, dry_run=True, now=now, seen_before=seen_before)
+            return run(meetings, cfg, con, None, data_dir=self.data, dry_run=True, now=now, seen_before=seen_before,
+                       window=window)
         sid = store.jira_source(con, cfg["jira"]["base_url"])
         store.remember_me(con, sid, jira.myself())
         ctx = collect.context(con, jira, sid)
         ids, self.calendar = store.store_calendar(con, store.calendar_source(con, source), meetings, window)
         return run(meetings, cfg, con, jira, data_dir=self.data, now=now, event_ids=ids, ctx=ctx,
-                   seen_before=seen_before)
+                   seen_before=seen_before, window=window)

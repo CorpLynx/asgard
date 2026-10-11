@@ -948,6 +948,19 @@ class ReviewFindingsTests(AssistCase):
         self.assertEqual([f for f in muninn.integrity.check(self.con).findings if f.area == "agents"], [],
                          "a withdrawn report counts for nothing, so there's nothing to fix")
 
+    def test_a_report_written_without_its_event_is_flagged(self):
+        """Review (Oct 10) finding 6: the event is what seals a report's commits, so a report written raw
+        without it could still be added to. Muninn's check names it."""
+        p42, _ = self.worked()
+        self.record(commits=p42, minutes=45)
+        self.assertEqual([f for f in muninn.integrity.check(self.con).findings if f.area == "agents"], [])
+        cols = [r[1] for r in self.con.execute("PRAGMA table_info(agent_estimates)")
+                if r[1] not in ("id", "report_hash", "recorded_at")]
+        raw = self.con.execute(f"INSERT INTO agent_estimates ({', '.join(cols)}, report_hash) SELECT {', '.join(cols)}, "
+                               "report_hash || 'x' FROM agent_estimates ORDER BY id LIMIT 1 RETURNING id").fetchone()[0]
+        problems = [f for f in muninn.integrity.check(self.con).findings if f.area == "agents"]
+        self.assertTrue(any(f"r{raw} weren't recorded through Baldur" in f.message for f in problems), problems)
+
     def test_r15_a_figure_changed_by_hand_stays_yours_whatever_you_change_it_to(self):
         p42, _ = self.worked()
         self.record(commits=p42, minutes=45)

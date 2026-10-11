@@ -12,8 +12,9 @@ import io
 import re
 import sys
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_jira import APP, LandsThenFails  # noqa: E402
@@ -23,7 +24,9 @@ from asgard import muninn  # noqa: E402
 from asgard.muninn import odin as mo  # noqa: E402
 from odin import store  # noqa: E402
 from odin.cli import main  # noqa: E402
+from odin.config import build_config  # noqa: E402
 from odin.jira import JiraError  # noqa: E402
+from odin.models import Meeting  # noqa: E402
 
 
 class SettleCase(PostingCase):
@@ -122,15 +125,48 @@ class PersonSettlesTests(SettleCase):
         asked = self.jira.calls.count("issue_worklogs")
         self.assertEqual(self.run_cli("settle", str(wid), "--posted", jira_id), 0, self.output)
         self.assertEqual(self.state(wid), ("posted", jira_id))
-        self.assertEqual(self.jira.calls.count("issue_worklogs"), asked)      # the person's word, not Jira's
+        self.assertEqual(self.jira.calls.count("issue_worklogs"), asked + 1)  # checked in Jira first
         # The next worklog sync sees Jira's worklog as this post, not as a second one.
         self.assertTrue(self.prepare().worklogs_ok)
         self.assertEqual(self.peek().execute("SELECT count(*) FROM worklogs").fetchone()[0], 1)
         self.assertEqual(mo.posts_due(self.con), [])
 
+    def test_posted_is_checked_in_jira_when_jira_can_answer(self):
+        """Review (Oct 10) finding 5: a mistyped id was recorded unchecked, and couldn't be undone."""
+        wid = self.in_doubt(landed=True)
+        real = self.jira.worklogs["XYZ-5"][0]
+        self.jira.add_jira_worklog("XYZ-5", 1800, "2026-10-01T09:00:00Z", comment="by hand, other work")
+        other = str(self.jira.worklogs["XYZ-5"][1]["id"])
+        for given, why in (("99999", "Jira has no worklog 99999 on XYZ-5"),
+                           (other, "doesn't carry this post's marker")):
+            with self.subTest(given=given):
+                self.assertEqual(self.run_cli("settle", str(wid), "--posted", given), 2)
+                self.assertIn(why, self.output)
+                self.assertIn("Nothing changed.", self.output)
+                self.assertEqual(self.state(wid), ("sending", None))
+        self.assertEqual(self.run_cli("settle", str(wid), "--posted", "0" + str(real["id"])), 0, self.output)
+        self.assertEqual(self.state(wid), ("posted", str(real["id"])))         # stored without the zero
+
+    def test_time_logged_by_hand_at_the_same_length_is_taken(self):
+        wid = self.in_doubt()
+        self.jira.add_jira_worklog("XYZ-5", 7200, "2026-10-01T15:05:00Z", comment="logged by hand")
+        by_hand = str(self.jira.worklogs["XYZ-5"][0]["id"])
+        self.assertEqual(self.run_cli("settle", str(wid), "--posted", by_hand), 0, self.output)
+        self.assertIn("same length", self.output)
+        self.assertEqual(self.state(wid), ("posted", by_hand))
+
+    def test_when_jira_cant_answer_the_persons_word_stands_and_says_so(self):
+        wid = self.in_doubt()
+        self.jira.fail("issue_worklogs", JiraError("GET worklog failed: connection refused"))
+        self.assertEqual(self.run_cli("settle", str(wid), "--posted", "50123"), 0, self.output)
+        self.assertIn("recorded on your word", self.output)
+        self.assertEqual(self.state(wid), ("posted", "50123"))
+
     def test_posted_needs_a_number(self):
         wid = self.in_doubt()
-        self.assertEqual(self.run_cli("settle", str(wid), "--posted", "abc"), 2)
+        for given in ("abc", "\u0661\u0662\u0663", "12 34", "-5"):     # Arabic-Indic digits pass str.isdigit()
+            self.assertEqual(self.run_cli("settle", str(wid), "--posted", given), 2, given)
+            self.assertTrue(self.output.isascii())
         self.assertEqual(self.state(wid), ("sending", None))
 
     def test_an_id_another_post_already_has_is_refused(self):
@@ -162,6 +198,41 @@ class PersonSettlesTests(SettleCase):
         self.assertIn("Say which post", self.output)
         with self.assertRaises(SystemExit):
             self.run_cli("settle", "1", "--posted", "5", "--not-posted")
+
+
+class OldMeetingTests(SettleCase):
+    """Review (Oct 10) finding 4: a meeting's time is retried for store.RETRY_DAYS after its sub-task
+    was made, so settling an older one as not posted promised a retry that never came."""
+
+    def meeting_in_doubt(self):
+        self.jira = LandsThenFails()
+        self.jira.add_issue("PROJ-123", "Meetings")
+        self.jira.lose_answers = 1
+        start = datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc)
+        m = Meeting(source="outlook-com", key="GID-1|2026-09-21T14:00:00Z", subject="Design review",
+                    start_utc=start, end_utc=start + timedelta(hours=1))
+        cfg = build_config({"jira": {"base_url": "https://jira.example.gov", "default_parent": "PROJ-123",
+                                     "assign_to_me": False, "log_work": True}})
+        self.push([m], cfg, self.jira)
+        (row,) = self.peek().execute("SELECT id FROM worklogs WHERE state = 'sending'").fetchall()
+        self.jira.worklogs["PROJ-901"].clear()            # it didn't land after all
+        return row[0]
+
+    def test_a_recent_meeting_is_offered_again(self):
+        wid = self.meeting_in_doubt()
+        self.assertEqual(self.run_cli("settle", str(wid), "--not-posted"), 0, self.output)
+        self.assertIn("offered again on the next run", self.output)
+        self.assertIn("twice", self.output)
+
+    def test_an_older_meeting_says_to_log_it_by_hand(self):
+        wid = self.meeting_in_doubt()
+        with mock.patch.object(store, "RETRY_DAYS", -1):      # as if its sub-task were made long ago
+            self.assertEqual(self.run_cli("settle", str(wid)), 0, self.output)
+            self.assertIn("No run will send it again", self.output)
+            self.assertIn("log 1h00m on PROJ-901 at ", self.output)
+            self.assertNotIn("offered again", self.output)
+            self.assertEqual(self.state(wid), ("failed", None))
+            self.assertEqual(store.pending_meeting_worklogs(self.con), [])
 
 
 class WhichPostTests(SettleCase):

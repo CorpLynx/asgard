@@ -346,6 +346,20 @@ class RealClientTests(_ServerCase):
             self.client.issue_worklogs("GONE-1")
         self.assertEqual(ctx.exception.status, 404)
 
+    def test_an_answer_without_a_worklog_list_is_a_failure_not_no_worklogs(self):
+        """Review (Oct 10) finding 3: an empty 200, {} or {"worklogs": null} read as "no worklogs", so
+        odin settle recorded a post that had landed as not posted, and its time was offered again."""
+        for status, payload, content_type in ((200, None, "text/html"), (200, {}, "application/json"),
+                                              (200, {"worklogs": None, "total": 0}, "application/json"),
+                                              (200, [], "application/json"),
+                                              (200, {"worklogs": [], "total": "0"}, "application/json")):
+            with self.subTest(payload=payload, content_type=content_type):
+                self.answer("GET", "/rest/api/2/issue/ABC-1/worklog", payload, status, content_type)
+                with self.assertRaises(JiraError):
+                    self.client.find_worklog("ABC-1", "[asgard:b-9f3c1a2b]")
+        self.answer("GET", "/rest/api/2/issue/ABC-1/worklog", {"total": 0, "worklogs": []})
+        self.assertIsNone(self.client.find_worklog("ABC-1", "[asgard:b-9f3c1a2b]"))     # a real "none"
+
     def test_find_worklog_finds_the_marker_in_a_text_or_structured_comment(self):
         marker = "[asgard:b-9f3c1a2b]"
         self.answer("GET", "/rest/api/2/issue/ABC-1/worklog", {"total": 3, "worklogs": [

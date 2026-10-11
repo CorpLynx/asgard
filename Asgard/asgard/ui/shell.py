@@ -321,6 +321,19 @@ class Bridge(QObject):
             self.runningChanged.emit()
             self.finished.emit(-1)
 
+    def close_backend(self) -> None:
+        """Let a backend let go of what it holds (a database file, say) when the window closes.
+
+        On Windows an open file can't be replaced, so a backend still holding one would block the
+        next Asgard upgrade. Backends that hold nothing don't need the method.
+        """
+        close = getattr(self._backend, "close", None) if self._loaded else None
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001 - closing must not stop the window closing
+                log.exception("%s didn't close cleanly", self.app.name)
+
     running = Property(bool, lambda self: self._proc is not None, notify=runningChanged)
     appId = Property(str, lambda self: self.app.id, constant=True)
     appName = Property(str, lambda self: self.app.name, constant=True)
@@ -916,6 +929,7 @@ class Shell:
             self.home.stop()
         for bridge in self.bridges.values():
             bridge.stop()
+            bridge.close_backend()
         QThreadPool.globalInstance().waitForDone(5000)
         for obj in self.engine.rootObjects():
             obj.deleteLater()

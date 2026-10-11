@@ -29,7 +29,7 @@ What always stays standard library: `asgard/muninn/` (every app and Odin import 
 | Native code | Yes: Qt DLLs and `.pyd` files. App Control must allow them |
 | Approval | Approved by the owner, Oct 2026 (in use on-prem) |
 | If it's missing | Heimdall's tile shows a message saying what to install (`asgard.ui.run`); the `heimdall` commands still do everything the window does |
-| Stdlib alternative | `tkinter`, which Baldur's window uses and which the launcher keeps as its fallback (`asgard/launcher.py`). `asgard/ui/theme.py`, `prefs.py` and `registry.py` are standard library, so a tkinter shell could reuse the tokens, preferences and manifests; the QML pages would be rewritten as Tk widgets, and each app's backend (plain Python) stays as it is |
+| Stdlib alternative | `tkinter`, which the launcher keeps as its fallback (`asgard/launcher.py`, chosen when PySide6 can't load, or forced with `ASGARD_UI=tk`). `asgard/ui/theme.py`, `prefs.py` and `registry.py` are standard library, so a tkinter shell could reuse the tokens, preferences and manifests; the QML pages would be rewritten as Tk widgets, and each app's backend (plain Python) stays as it is |
 | Package alternatives | `PyQt6` (and `PyQt6-Qt6`): the same Qt, so the QML files work unchanged; `shell.py` needs its imports renamed (`Signal` to `pyqtSignal`, `Slot` to `pyqtSlot`, `Property` to `pyqtProperty`). GPL or a commercial licence, which IT may weigh differently from PySide6's LGPL. The full `PySide6` package works too; it's larger |
 
 ### mcp
@@ -74,7 +74,7 @@ Reviewed 2026-10-09 against "the best module for each job". Muninn, Baldur and B
 | The command line | `click`, `typer` | `argparse` | `apps/baldur/baldur/cli.py` | Enough for the commands, with ASCII output and nothing to install |
 | A chat's JSON reply | `json-repair` | `muninn.baldur.parse_reply`, which strips code fences and refuses anything that isn't JSON | `asgard/muninn/baldur.py` | Muninn stays standard library. A refused reply only means asking the chat again, but a repaired one can quietly change what it says: a cut-off list of adjustments becomes a shorter valid one |
 | The agent hooks | — | `json`, `re` and `shlex` | `apps/baldur/agents/hooks/` | They run under whatever Python the agent (Kiro) starts, outside Asgard's install, so they can't count on any package |
-| Baldur's window | `PySide6-Essentials` (pinned and approved) | `tkinter` | `apps/baldur/baldur/window.py` | It predates the shared Qt window. Moving it is optional (HANDOFF, "Shared window, decided"); if it moves, `desk.py` is already the plain-Python backend a QML page would call |
+| Baldur's window | `PySide6-Essentials` (pinned and approved) | `tkinter` | `apps/baldur/ui/*.qml` over `baldur/ui_backend.py`; `baldur/window.py` is the older tkinter one | The Qt pages do everything the tkinter window does as of Oct 11. `window.py` is kept only as a fallback until the Qt day page has been driven on the workstation, then deleted (`docs/handoff-baldur-qt-parity.md`) |
 
 ## Planned (not pinned yet)
 

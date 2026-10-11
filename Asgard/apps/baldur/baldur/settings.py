@@ -11,16 +11,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import os
-import tempfile
-import threading
-import time
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from asgard import paths
+from asgard import jsonfile, paths
 
 POLICIES = ("ambient", "overlap", "independent")
 REVIEW_MODES = ("off", "metadata", "content")
@@ -265,41 +261,13 @@ def load(path: Optional[Path] = None, create: bool = True) -> Settings:
         return Settings(warnings=[f"couldn't use {path.name}: {exc}"], broken=True)
 
 
-# One writer at a time in this process. On Windows a rename onto a file that another thread is
-# renaming onto, or reading, is refused ("Access is denied") rather than waiting its turn.
-_SAVING = threading.Lock()
-
-
-def _replace(tmp: Path, path: Path, tries: int = 20) -> None:
-    for attempt in range(tries):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if os.name != "nt" or attempt == tries - 1:
-                raise
-            time.sleep(0.05)        # a reader has it open for a moment
-
-
 def save(values: Dict[str, Any], path: Optional[Path] = None) -> Path:
     path = path or settings_path()
     data = {"_help": "Baldur's settings. See the Baldur spec for what each one does."}
     data.update(validate(values))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Its own temporary file, not a fixed name: the window reads settings from more than one thread,
-    # and two writers sharing "baldur.json.tmp" would have one rename a file the other already took.
-    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
-    tmp = Path(name)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
-            json.dump(data, fh, indent=2)
-            fh.write("\n")
-        with _SAVING:
-            _replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-    return path
+    # asgard.jsonfile: its own temporary file, and a rename that waits out Windows holding the
+    # target open. The window writes settings from one thread while another reads them.
+    return jsonfile.write_json(path, data)
 
 
 def update(changes: Dict[str, Any], path: Optional[Path] = None) -> Settings:

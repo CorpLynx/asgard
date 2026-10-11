@@ -1,5 +1,9 @@
 // Baldur: one day's figures, and where you approve them. Approving is a decision, so it asks first and
 // says what happens next. Baldur never writes to Jira; Odin posts what you approved.
+//
+// A figure can be typed on its row. Before approving, it is held by the backend (the page is rebuilt
+// each visit and can't hold it) and approved with the day; once approved, changing it asks first and
+// supersedes the old decision. The backend parses what was typed, so the CLI and the page agree.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -66,6 +70,54 @@ ScrollPage {
         reload()
     }
 
+    // A figure typed on a row: stage it, or (approved already) ask before changing it.
+    property bool saving: false
+    function saveFigure(ticket, typed, field) {
+        // Saving reloads the rows, and a row losing focus as it goes would save again: once is enough.
+        if (saving)
+            return
+        saving = true
+        try {
+            saveTyped(ticket, typed, field)
+        } finally {
+            saving = false
+        }
+    }
+    function saveTyped(ticket, typed, field) {
+        var shown = ticket.staged_text !== "" ? ticket.staged_text : ticket.figure_text
+        typed = typed.trim()
+        if (typed === shown)
+            return
+        if (ticket.edit === "stage") {
+            var r = typed === "" ? bridge.call("clear_figure", [page.day.date, ticket.key])
+                                 : bridge.call("stage_figure", [page.day.date, ticket.key, typed])
+            if (r && r.error) {
+                shell.toast(r.error, "error")
+                field.text = shown
+                return
+            }
+            reload()
+            return
+        }
+        if (ticket.edit !== "change")
+            return
+        var parsed = bridge.call("parse_minutes", [typed])
+        if (parsed && parsed.error) {
+            shell.toast(parsed.error, "error")
+            field.text = shown
+            return
+        }
+        if (parsed.minutes === ticket.approved) {
+            field.text = shown
+            return
+        }
+        changeDialog.key = ticket.key
+        changeDialog.typed = parsed.text
+        changeDialog.was = ticket.approved_text
+        changeDialog.field = field
+        changeDialog.open()
+    }
+
     function decide(method, args) {
         var r = bridge.call(method, args)
         if (r && r.error)
@@ -90,7 +142,7 @@ ScrollPage {
         AppButton {
             text: "Reject"
             enabled: page.day.approvable === true || page.day.has_approved === true
-            onClicked: page.decide("reject", [page.day.date])
+            onClicked: rejectDialog.open()
         }
         AppButton {
             text: "Reload"
@@ -193,12 +245,61 @@ ScrollPage {
                     Layout.preferredWidth: 110
                 }
                 Text {
+                    visible: row.modelData.edit === ""
                     text: row.modelData.figure_text
                     color: theme.text
                     font.family: theme.monoFamily
                     font.pixelSize: theme.fontSize
                     horizontalAlignment: Text.AlignRight
-                    Layout.preferredWidth: 60
+                    Layout.preferredWidth: 72
+                }
+                // Typed figures save on Enter and when focus leaves; Escape puts back what was there.
+                TextField {
+                    id: figureField
+                    readonly property string shown: row.modelData.staged_text !== "" ? row.modelData.staged_text
+                                                                                    : row.modelData.figure_text
+                    visible: row.modelData.edit !== ""
+                    text: shown
+                    placeholderText: row.modelData.estimate_text
+                    horizontalAlignment: TextInput.AlignRight
+                    font.family: theme.monoFamily
+                    font.pixelSize: theme.fontSize
+                    font.weight: row.modelData.staged_text !== "" ? Font.DemiBold : Font.Normal
+                    Layout.preferredWidth: 72
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 600
+                    ToolTip.text: row.modelData.edit === "change"
+                                  ? "Type a new figure to change what you approved, like 1h15m, 75 or 1:15."
+                                  : "Type your own figure, like 1h15m, 75 or 1:15. It is used when you approve the day."
+                    Accessible.name: "Figure for " + row.modelData.key
+                    Accessible.description: ToolTip.text
+                    onAccepted: page.saveFigure(row.modelData, text, figureField)
+                    onActiveFocusChanged: {
+                        if (!activeFocus && text.trim() !== shown)
+                            page.saveFigure(row.modelData, text, figureField)
+                    }
+                    Keys.onEscapePressed: { text = shown; focus = false }
+                }
+                // A fixed slot, so the columns after it line up whether or not a row has a typed figure.
+                RowLayout {
+                    spacing: 6
+                    Layout.preferredWidth: 180
+                    Pill {
+                        visible: row.modelData.staged_text !== ""
+                        text: "yours"
+                        tone: "accent"
+                    }
+                    AppButton {
+                        visible: row.modelData.staged_text !== ""
+                        text: "Use estimate"
+                        kind: "ghost"
+                        onClicked: {
+                            page.bridge.call("clear_figure", [page.day.date, row.modelData.key])
+                            page.reload()
+                        }
+                        Accessible.name: "Use Baldur's estimate for " + row.modelData.key
+                    }
+                    Item { Layout.fillWidth: true }
                 }
                 Text {
                     text: row.modelData.held_text !== "" ? "Jira holds " + row.modelData.held_text : ""
@@ -314,6 +415,8 @@ ScrollPage {
         Text {
             text: "Approving records these figures as your decision. Baldur can't change a decision afterwards; "
                   + "it can only be superseded. Odin posts them to Jira on its next run, once for each day."
+                  + (page.day.staged > 0 ? "\n\nThe " + page.day.staged + " figure(s) marked 'yours' are approved "
+                                           + "as you typed them." : "")
             color: theme.textMuted
             font.family: theme.fontFamily
             font.pixelSize: theme.fontSize
@@ -328,6 +431,62 @@ ScrollPage {
                 onClicked: {
                     approveDialog.close()
                     page.decide("approve", [page.day.date, ""])
+                }
+            }
+        ]
+    }
+
+    AppDialog {
+        id: rejectDialog
+        title: "Reject " + (page.day.name || "this day") + "?"
+        Text {
+            text: "Reject the estimate for this day? Nothing is posted for it."
+            color: theme.textMuted
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontSize
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+        }
+        buttons: [
+            AppButton { text: "Cancel"; onClicked: rejectDialog.close() },
+            AppButton {
+                text: "Reject"
+                kind: "danger"
+                onClicked: {
+                    rejectDialog.close()
+                    page.decide("reject", [page.day.date])
+                }
+            }
+        ]
+    }
+
+    AppDialog {
+        id: changeDialog
+        property string key: ""
+        property string typed: ""
+        property string was: ""
+        property var field: null
+        title: "Change an approved figure"
+        onClosed: if (field) field.text = field.shown
+        Text {
+            text: "Approve " + changeDialog.typed + " for " + changeDialog.key + " instead of " + changeDialog.was
+                  + "? Odin posts the difference."
+            color: theme.textMuted
+            font.family: theme.fontFamily
+            font.pixelSize: theme.fontSize
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
+        }
+        buttons: [
+            AppButton { text: "Cancel"; onClicked: changeDialog.close() },
+            AppButton {
+                text: "Approve " + changeDialog.typed
+                kind: "primary"
+                onClicked: {
+                    var key = changeDialog.key, typed = changeDialog.typed
+                    changeDialog.field = null
+                    changeDialog.close()
+                    page.decide("change_approved", [page.day.date, key, typed])
                 }
             }
         ]

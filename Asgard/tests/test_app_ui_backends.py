@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -20,7 +21,11 @@ for folder in (ROOT, ROOT / "apps" / "baldur", ROOT / "apps" / "ysildir"):
         sys.path.insert(0, str(folder))
 
 from asgard import muninn  # noqa: E402
+from asgard.muninn import baldur as approvals  # noqa: E402
 from asgard.ui import registry  # noqa: E402
+
+sys.path.insert(0, str(ROOT / "tests"))
+import test_baldur as tb  # noqa: E402  (its fixtures; a module attribute, so its tests aren't run twice)
 
 
 class Home(unittest.TestCase):
@@ -64,6 +69,7 @@ class BaldurBackendTests(Home):
         muninn.prepare()
         from baldur import ui_backend
         self.b = ui_backend.Backend()
+        self.addCleanup(self.b.close)       # before the temporary folder goes: Windows won't delete an open file
 
     def set_up_baldur(self):
         """Who you are and which project counts: Baldur refuses to estimate without both."""
@@ -108,26 +114,6 @@ class BaldurBackendTests(Home):
         self.assertEqual(self.b.day(other)["date"], other)                # and asking moves it
         self.assertEqual(self.b.day()["date"], other)
 
-    def test_pages_can_be_read_from_a_worker_thread_after_the_ui_thread(self):
-        """The shell calls one backend from the UI thread and from workers (Dashboard, callAsync); a
-        connection kept from the first call is refused on the next thread."""
-        import threading
-        self.b.week()
-        problems = []
-
-        def work():
-            try:
-                self.b.week()
-                self.b.day()
-                self.b.reviews()
-            except Exception as exc:                        # noqa: BLE001 - the test reports it
-                problems.append(exc)
-
-        t = threading.Thread(target=work)
-        t.start()
-        t.join()
-        self.assertEqual(problems, [])
-
     def test_an_empty_day_offers_nothing_to_approve(self):
         self.set_up_baldur()
         day = self.b.day(dt.date.today().isoformat())
@@ -159,6 +145,51 @@ class BaldurBackendTests(Home):
         self.assertEqual(cards[0]["value"], "0")
         self.assertEqual(cards[0]["view"], "week")
 
+    def test_reading_leaves_no_connection_open(self):
+        """Windows can't delete or replace an open file, so a read must not keep muninn.db open.
+
+        A held connection broke the temporary folder every test runs in (the Windows build saw
+        PermissionError: WinError 32 on cleanup) and would block an Asgard upgrade the same way.
+        """
+        import gc
+        import sqlite3 as sqlite
+        self.set_up_baldur()
+        self.b.week()
+        self.b.day()
+        self.b.reviews()
+        self.b.dashboard()
+        gc.collect()
+        still_open = []
+        for obj in gc.get_objects():
+            if isinstance(obj, sqlite.Connection):
+                try:
+                    obj.execute("SELECT 1")
+                except sqlite.ProgrammingError:
+                    continue                    # already closed
+                except sqlite.Error:
+                    continue                    # someone else's, in a state we can't read
+                still_open.append(obj)
+        self.assertEqual(still_open, [], "the backend is holding a Muninn connection open")
+
+    def test_reads_work_from_several_threads(self):
+        """sqlite3 refuses a connection on another thread, so each read opens its own."""
+        self.set_up_baldur()
+        problems = []
+
+        def work():
+            try:
+                self.b.week()
+                self.b.day()
+            except Exception as exc:            # noqa: BLE001 - the test reports it
+                problems.append(exc)
+
+        threads = [threading.Thread(target=work) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(problems, [])
+
     def test_broken_settings_are_a_message_not_a_traceback(self):
         path = self.dir / "settings" / "baldur.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,6 +205,232 @@ class BaldurBackendTests(Home):
             with self.assertRaisesRegex(ValueError, "Open Asgard once"):
                 ui_backend.Backend().week()
             self.assertEqual(ui_backend.Backend().dashboard()[0]["tone"], "error")
+
+
+class BaldurFigureTests(tb.MuninnCase):
+    """Typing a figure on the day page: staged until you approve, or a change to one you approved.
+
+    The worked example from test_baldur.py (PROJ-42 1h30m, PROJ-51 30m on 1 Oct 2026), read through
+    the backend the page uses, with the settings in the file the backend reads.
+    """
+
+    def setUp(self):
+        super().setUp()
+        path = self.dir / "settings" / "baldur.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"project_keys": ["PROJ", "OPS"], "history_days": 3650}), encoding="utf-8")
+        self.worked_example()
+        from baldur import ui_backend
+        self.b = ui_backend.Backend()
+        self.addCleanup(self.b.close)
+        self.date = tb.DAY.isoformat()
+
+    def approved(self):
+        return {r["work_item_key"]: r["minutes_final"] for r in self.rows("approved")}
+
+    def ticket(self, key):
+        return next(t for t in self.b.day(self.date)["tickets"] if t["key"] == key)
+
+    def test_a_read_on_another_thread_gets_its_own_connection(self):
+        """Regression: one cached read connection, opened by the shell's dashboard on a pool thread, was
+        then used by the day page on the window's thread, and sqlite3 refused it (ProgrammingError)."""
+        import threading
+        errors = []
+
+        def work():
+            try:
+                self.b.dashboard()
+                self.b.close()
+            except Exception as exc:  # noqa: BLE001 - recorded for the assertion
+                errors.append(exc)
+
+        worker = threading.Thread(target=work)
+        worker.start()
+        worker.join()
+        self.assertEqual(errors, [])
+        self.b.dashboard()                          # opens on the worker first, as in the window
+        other = threading.Thread(target=lambda: errors.extend(
+            [r for r in [self.b.dashboard()] if r[0].get("tone") == "error"]))
+        other.start()
+        other.join()
+        self.assertEqual(errors, [], "a page on another thread reads fine")
+        self.assertEqual([t["key"] for t in self.b.day(self.date)["tickets"]], ["PROJ-42", "PROJ-51"])
+
+    def test_what_you_type_is_parsed_by_the_clis_own_rules(self):
+        for text, minutes in (("1h15m", 75), ("75", 75), ("1:15", 75), (" 45m ", 45)):
+            self.assertEqual(self.b.parse_minutes(text)["minutes"], minutes, text)
+        self.assertEqual(self.b.parse_minutes("75")["text"], "1h15m")
+        for bad, words in (("an hour", "isn't a length of time"), ("25h", "more than a day"), ("", "length of time")):
+            with self.assertRaisesRegex(ValueError, words):
+                self.b.parse_minutes(bad)
+
+    def test_a_staged_figure_shows_on_the_day_and_is_what_gets_approved(self):
+        self.assertEqual(self.ticket("PROJ-42")["edit"], "stage")
+        self.assertTrue(self.b.day(self.date)["approvable"], "before Estimate has stored it, as the old window")
+        reply = self.b.stage_figure(self.date, "proj-42", "1h45m")
+        self.assertEqual((reply["key"], reply["minutes"]), ("PROJ-42", 105))
+        self.assertEqual(self.b.staged(self.date), {"PROJ-42": 105})
+        row = self.ticket("PROJ-42")
+        self.assertEqual((row["staged"], row["staged_text"], row["figure"]), (105, "1h45m", 90),
+                         "the estimate stays as it was; the typed figure is beside it")
+        self.assertEqual(self.ticket("PROJ-51")["staged"], None)
+        self.assertEqual(self.rows("approved"), [], "staging decides nothing")
+        self.assertEqual(self.b.approve(self.date)["count"], 2)
+        self.assertEqual(self.approved(), {"PROJ-42": 105, "PROJ-51": 30})
+        self.assertEqual(self.b.staged(self.date), {}, "cleared once the day is approved")
+
+    def test_staged_figures_survive_moving_between_pages(self):
+        """The shell keeps one backend per app; the page is rebuilt, the backend isn't."""
+        self.b.stage_figure(self.date, "PROJ-51", "20m")
+        self.b.week(self.date)
+        self.b.day(tb.NEXT.isoformat())
+        self.assertEqual(self.b.staged(self.date), {"PROJ-51": 20})
+        self.assertEqual(self.b.staged(tb.NEXT.isoformat()), {})
+
+    def test_clearing_a_staged_figure_goes_back_to_the_estimate(self):
+        self.b.stage_figure(self.date, "PROJ-42", "2h")
+        self.assertTrue(self.b.clear_figure(self.date, "PROJ-42")["cleared"])
+        self.assertFalse(self.b.clear_figure(self.date, "PROJ-42")["cleared"])
+        self.b.approve(self.date)
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 30})
+
+    def test_typing_the_estimate_again_stages_nothing(self):
+        self.b.stage_figure(self.date, "PROJ-42", "2h")
+        self.assertIsNone(self.b.stage_figure(self.date, "PROJ-42", "90")["minutes"])
+        self.assertEqual(self.b.staged(self.date), {})
+
+    def test_a_bad_figure_or_ticket_is_refused_and_nothing_is_staged(self):
+        self.b.stage_figure(self.date, "PROJ-42", "1h")
+        for key, text, words in (("PROJ-42", "soon", "isn't a length of time"),
+                                 ("PROJ-42", "26h", "more than a day"),
+                                 ("PROJ-99", "1h", "PROJ-99 has no time"),
+                                 ("not a key", "1h", "isn't a Jira key")):
+            with self.subTest(key=key, text=text), self.assertRaisesRegex(ValueError, words):
+                self.b.stage_figure(self.date, key, text)
+        self.assertEqual(self.b.staged(self.date), {"PROJ-42": 60}, "a refusal keeps what was there")
+
+    def test_a_staged_figure_counts_with_the_ai_figures_too(self):
+        """Approving the AI-assisted figures still takes what you typed for its ticket (desk.approve_day)."""
+        self.b.stage_figure(self.date, "PROJ-51", "15m")
+        with mock.patch("baldur.desk.assist.approve_day", return_value=[1, 2]) as approve:
+            self.b.approve(self.date, "digest")
+        self.assertEqual(approve.call_args[0][3], {"PROJ-51": 15})
+        self.assertEqual(approve.call_args[1]["shown"], "digest")
+
+    def test_a_staged_figure_for_a_ticket_decided_elsewhere_is_said_not_swallowed(self):
+        """Regression: approve() matched "nothing to approve" anywhere in the message, so desk's refusal
+        "PROJ-42 has nothing to approve" (a typed figure that can't be used) read as "Nothing on that day
+        was waiting", while PROJ-51 was waiting."""
+        self.b.stage_figure(self.date, "PROJ-42", "1h45m")
+        self.run_store()                                       # the CLI stores the estimate...
+        approvals.approve(self.con, self.open_ids()["PROJ-42"])  # ...and approves PROJ-42 alone
+        with self.assertRaisesRegex(ValueError, "PROJ-42 has nothing to approve"):
+            self.b.approve(self.date)
+        self.assertEqual(self.approved(), {"PROJ-42": 90}, "nothing more approved when one figure can't be")
+        self.assertEqual(self.b.staged(self.date), {"PROJ-42": 105}, "refused, so still there to see")
+        self.assertEqual(self.ticket("PROJ-42")["edit"], "change")
+        self.assertEqual(self.b.staged(self.date), {}, "reloading the day drops a figure that can't be approved")
+        self.assertEqual(self.b.approve(self.date)["count"], 1)
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 30})
+
+    def test_changing_an_approved_figure_supersedes_it(self):
+        self.b.approve(self.date)
+        row = self.ticket("PROJ-51")
+        self.assertEqual((row["edit"], row["approved"]), ("change", 30))
+        self.assertNotIn("approved_id", row, "the id stays in Python")
+        with self.assertRaisesRegex(ValueError, "already approved at 30m. Change it instead"):
+            self.b.stage_figure(self.date, "PROJ-51", "45m")
+        reply = self.b.change_approved(self.date, "PROJ-51", "45m")
+        self.assertEqual(reply["count"], 1)
+        self.assertIn("Odin posts the difference", reply["message"])
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 45})
+        self.assertEqual(len(self.rows("superseded")), 1, "the old decision is kept, not edited")
+        self.assertEqual(self.b.change_approved(self.date, "PROJ-51", "45")["count"], 0, "same figure: no new row")
+        self.assertEqual(len(self.rows("superseded")), 1)
+
+    def test_a_figure_that_was_never_approved_cant_be_changed(self):
+        with self.assertRaisesRegex(ValueError, "no approved figure"):
+            self.b.change_approved(self.date, "PROJ-42", "1h")
+        self.assertEqual(self.rows("approved"), [])
+
+    def test_a_person_may_type_a_bigger_number(self):
+        """Biasing down binds the code, not the person: their figure is their decision."""
+        self.b.stage_figure(self.date, "PROJ-42", "3h")
+        self.b.approve(self.date)
+        self.assertEqual(self.approved()["PROJ-42"], 180)
+
+    def test_rejecting_a_day_drops_its_typed_figures(self):
+        self.b.stage_figure(self.date, "PROJ-42", "1h")
+        self.assertEqual(self.b.reject(self.date)["count"], 2)
+        self.assertEqual(self.b.staged(self.date), {})
+
+
+class BaldurGitHubTests(tb.MuninnCase):
+    """The week page's timer: one GitHub pass through callAsync, never loud."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings_file = self.dir / "settings" / "baldur.json"
+        self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+        from baldur import ui_backend
+        self.b = ui_backend.Backend()
+        self.addCleanup(self.b.close)
+
+    def write(self, **values):
+        self.settings_file.write_text(json.dumps(dict({"project_keys": ["PROJ"]}, **values)), encoding="utf-8")
+
+    def test_github_off_is_a_state_not_an_error(self):
+        self.write(poll_minutes=7)
+        reply = self.b.sync_github()
+        self.assertEqual((reply["state"], reply["poll_minutes"]), ("off", 7))
+        self.assertFalse(self.b.week()["github"])
+        self.assertEqual(self.b.week()["poll_minutes"], 7)
+
+    def test_no_token_says_how_to_save_one(self):
+        self.write(github_api="github.agency.gov")
+        from baldur import github
+        with mock.patch.object(github, "load_token", return_value=None):
+            reply = self.b.sync_github()
+        self.assertEqual(reply["state"], "no token")
+        self.assertIn("github token", reply["message"])
+
+    def test_github_out_of_reach_is_quiet(self):
+        """A failure is a line beside the list, never a raise: estimates and approvals carry on."""
+        self.write(github_api="github.agency.gov")
+        from baldur import github
+        with mock.patch.object(github, "load_token", return_value="t"), \
+                mock.patch.object(github, "sync", side_effect=github.GitHubError("Couldn't reach github.agency.gov")):
+            reply = self.b.sync_github()
+        self.assertEqual(reply["state"], "failed")
+        self.assertIn("Couldn't reach github.agency.gov", reply["message"])
+
+    def test_opening_the_page_again_soon_reuses_the_last_pass(self):
+        self.write(github_api="github.agency.gov", poll_minutes=5)
+        from baldur import github
+        with mock.patch.object(github, "load_token", return_value=None) as token:
+            first = self.b.sync_github()
+            self.assertEqual(self.b.sync_github(), first)
+            self.assertEqual(token.call_count, 1, "one pass within poll_minutes")
+            self.b.sync_github(force=True)
+            self.assertEqual(token.call_count, 2)
+
+    def test_a_pass_against_the_fake_server_fills_the_list(self):
+        sys.path.insert(0, str(ROOT / "tests"))
+        import fake_github
+        server = fake_github.FakeGitHub()
+        self.addCleanup(server.close)
+        self.con.execute("UPDATE repos SET github_repo = 'csb/asgard' WHERE id = ?", (self.repo,))
+        server.pulls["csb/asgard"] = [fake_github.pr(8, "Session timeout", "sam", "feature/PROJ-51-timeout",
+                                                     requested=("bdoe",))]
+        server.requested = [("csb/asgard", 8)]
+        self.write(github_api="github.agency.gov")
+        from baldur import github
+        real_client = github.Client
+        with mock.patch.object(github, "load_token", return_value=fake_github.TOKEN), \
+                mock.patch.object(github, "Client", side_effect=lambda api, token: real_client(server.api, token)):
+            reply = self.b.sync_github()
+        self.assertEqual((reply["state"], reply["problems"]), ("fresh", []))
+        self.assertEqual([r["label"] for r in self.b.reviews()], ["csb/asgard#8"])
 
 
 class SettingsContractTests(Home):

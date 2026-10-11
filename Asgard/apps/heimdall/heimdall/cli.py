@@ -12,13 +12,16 @@ Exit codes: 0 done, 1 an expected problem (the message says what to do), 2 usage
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
-from . import browser   # imports Playwright only inside browser.run()
+from asgard import secrets
+
+from . import auth, browser   # browser imports Playwright only inside browser.run()
 from . import form as forms
 from . import library as libs
 from . import templates as tpl
@@ -28,7 +31,7 @@ from .library import LibraryError
 from .templates import Plan, Store, TemplateError
 from .variables import VariableError
 
-EXPECTED = (FormError, TemplateError, LibraryError, VariableError)
+EXPECTED = (FormError, TemplateError, LibraryError, VariableError, auth.AuthError, secrets.SecretError)
 
 
 def _say(text: str) -> None:
@@ -331,6 +334,30 @@ def _ask_for(asks: Sequence[tvars.Variable], given: Dict[str, Any], libraries: l
     return out
 
 
+def cmd_credentials(args: argparse.Namespace) -> int:
+    """Show, set or forget the name and password for an instance that wants them."""
+    path = args.form
+    values = forms.values(path)
+    if args.user is not None:
+        forms.set_values({"username": args.user.strip()}, path)
+        values = forms.values(path)
+        _say(f"User name set to {values['username'] or '(none)'}.")
+    if args.forget:
+        _say("Password removed." if auth.clear_password(values["instance_url"]) else "There was no saved password.")
+    elif args.password:
+        secret = getpass.getpass(f"Password for {auth.account(values['instance_url']) or 'the instance'}: ")
+        host = auth.save_password(values["instance_url"], secret)
+        _say(f"Password saved for {host}, in {secrets.where(auth.SERVICE, host)}.")
+    found = auth.status(values["instance_url"], values["username"])
+    if args.json:
+        _emit({"host": found.host, "username": found.username, "saved": found.saved, "where": found.where})
+        return 0
+    _say(found.line())
+    if not found.saved and found.host:
+        _say("Heimdall signs in through Edge with your certificate unless a name and password are set.")
+    return 0
+
+
 def cmd_library_import(args: argparse.Namespace) -> int:
     store = _libraries(args)
     lib, before = store.import_file(args.file)
@@ -493,6 +520,14 @@ def build_parser(prog: str = "asgard heimdall") -> argparse.ArgumentParser:
 
     p = add(tsub, "delete", cmd_template_delete, "Delete a template")
     p.add_argument("name")
+
+    p = add(sub, "credentials", cmd_credentials,
+            "Show, set or forget the ServiceNow user name and password (for an instance that wants them)")
+    p.add_argument("--user", metavar="NAME", help="the name to sign in with; kept in the form file")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--password", action="store_true", help="ask for the password and keep it in Credential Manager")
+    group.add_argument("--forget", action="store_true", help="remove the saved password for this instance")
+    json_flag(p)
 
     lib = sub.add_parser("library", help="Import, list, show or remove the libraries LIBRARY variables pick from",
                          description="Libraries are named lists, kept encrypted on this computer.")

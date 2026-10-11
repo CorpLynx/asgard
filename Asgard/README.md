@@ -82,7 +82,35 @@ asgard baldur approve --date 2026-10-01
 ```
 
 - `setup` records your git email in Muninn (only your email decides which commits are yours), the Jira projects you work in, and the folders your repositories are in. Run it alone to see what's still missing. If you commit with more than one email (one set per folder with `includeIf`, say), add each with `--email`.
-- `collect` reads your commits and each repository's reflog into Muninn: metadata only, never code. Git deletes reflog entries after 90 days, or 30 for commits no longer on any branch (such as ones a rebase replaced), so collect at least weekly; `asgard baldur schedule` adds a weekly task for you, with no admin rights.
+- `collect` reads your commits and each repository's reflog into Muninn: metadata only, never code. Git deletes reflog entries after 90 days, or 30 for commits no longer on any branch (such as ones a rebase replaced), so collect at least weekly.
+- `refresh` does a whole round in one command: read git, estimate the days it touched, and check GitHub. It decides nothing, so the days wait for you in `asgard baldur days`. `asgard baldur schedule` runs it for you on a schedule, with no admin rights:
+
+```
+asgard baldur refresh                                  do a round now
+asgard baldur schedule --cadence daily --time 18:00    every day at 6pm
+asgard baldur schedule --cadence weekly --day MON      Mondays at 09:00 (the default)
+asgard baldur schedule --remove                        stop it
+```
+
+  The task runs only while you're signed in, so no password is stored. If your computer blocks scheduled tasks, Baldur says so and you run `refresh` yourself. `--quiet` prints only problems, which is what the task uses. While Baldur's week page is open it also checks GitHub every `poll_minutes` (5 by default, set it under Settings).
+- **Plan and apply**, the way Odin works on the on-premises install: see what would happen, then say yes to it.
+
+```
+asgard baldur plan      what would be approved, and why the rest waits for you. Changes nothing
+asgard baldur apply     the same list, then approves it once you type YES
+```
+
+  `apply` needs no setting: typing YES while looking at the figures *is* the approval. It approves whole days at **the engine's own figures**, and leaves anything a person should see: a day with AI-assisted figures, a weekend, a day over your tour of duty, a day with no calendar data yet, a day you rejected before, a ticket Jira can't take, or any day the report flags. A day waits `auto_approve_min_age_days` (2) first, so late commits are in, and at most `auto_approve_max_days_per_run` (5) days go at once, oldest first.
+
+- **Letting the schedule apply it for you** is a separate, deliberate choice, and it is off:
+
+```
+asgard baldur auto-approve          whether scheduled runs may apply the plan, and how to change it
+asgard baldur auto-approve --on     says what that means, then asks you to type yes
+asgard baldur auto-approve --off    back to approving each day yourself
+```
+
+  With it on, a scheduled refresh applies the plan with nobody watching and Odin posts those days on its next run. Everything `apply` leaves for you, it leaves too. Approving is final either way, and nothing in Asgard can take posted time back: a figure you disagree with has to be fixed in Jira by hand.
 - `estimate` turns the last 14 days into one proposal per ticket per day. `report` shows a day with the basis of every number. Nothing reaches Jira until you `approve` it, and only Odin posts.
 - `keys SHA PROJ-123` gives a commit a Jira key by hand, and `repos --off NAME` leaves a repository out of estimates.
 - `setup --set github_api=github.agency.gov` names your GitHub Enterprise Server (the host is enough; `github.com` works too). Only remotes on that host count as GitHub repositories, and the squash commits it writes are skipped as copies. Pull request alerts aren't built yet.
@@ -221,6 +249,17 @@ asgard heimdall fill -t "Monthly scan" --dry-run
 asgard heimdall fill -t "Monthly scan"
 ```
 
+- **Settings in the window.** Heimdall now has its own section under **Settings**: the instance address, the catalog item, which page to use, and the sign-in details below. Everything else in the form file (the fields themselves) is still edited in the file, which Settings offers to open.
+- **Signing in.** On the workstation Heimdall signs in through Edge with your certificate and PIN, and needs no stored credentials at all. For an instance that wants a name and a password instead, such as a developer instance:
+
+```
+asgard heimdall credentials                      who it would sign in as, and whether a password is saved
+asgard heimdall credentials --user bdoe          the name, which is kept in the form file
+asgard heimdall credentials --password           asks for the password; nothing is echoed
+asgard heimdall credentials --forget             removes the saved password for this instance
+```
+
+  **The password is never in a settings file.** It goes to Windows Credential Manager for your account, saved per instance address, so set the address first. Heimdall never shows it again: Settings shows only "Saved" or "Not set", with a **Forget** button. Away from Windows there is no Credential Manager, so set `ASGARD_SECRET_HEIMDALL_<HOST>` instead and Heimdall says that's where it came from.
 - `init` creates the form file, `%LOCALAPPDATA%\Asgard\settings\heimdall.json`, from the example. Edit it once to match the security change form: `instance_url`, the catalog item's `catalog_sys_id` (the 32 characters after `sysparm_id=` or `sys_id=` in its address), and one entry per field with its label exactly as the form shows it and its `kind`: `text`, `select`, `reference` or `checkbox`. A field can also have `"required": true`, a `default`, or a `selector` when its label isn't enough to find it. `fields` shows what Heimdall read.
 - **Templates** are saved combinations of values for those fields. `template save NAME --set "LABEL=VALUE"` creates one; `template list`, `show`, `edit` (`--set`, `--unset`, `--attachment`, `--no-attachment`, `--rename`) and `delete` manage them. Names and labels ignore capitals. Checkboxes take `true` or `false`. Values may use `$today` (2026-10-04) or `$today_us` (10/04/2026); write `$$` for a dollar sign. In PowerShell, put such values in single quotes, or PowerShell replaces `$today` before Heimdall sees it.
 - `fill` uses, for each field, the form's default, then the template's value, then any `--set` you add for this run. A field with no value anywhere is left as it is. `--attachment` or `--no-attachment` changes the attachment for this run only, and `--dry-run` shows the plan without opening Edge.
@@ -361,7 +400,7 @@ Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, **... > Uni
 | `%LOCALAPPDATA%\Asgard\settings\baldur.json` | Baldur's settings |
 | `%LOCALAPPDATA%\Asgard\settings\ysildir.json` | Which Ysildir tools your AI client may use (`asgard ysildir tools`). No file means the defaults; a file Ysildir can't read leaves only `asgard_guide` on |
 | `%LOCALAPPDATA%\Asgard\settings\ui.json` | Your choices for the shared window: mode, text size, colours |
-| `%LOCALAPPDATA%\Asgard\settings\heimdall.json` | Heimdall's form file: the security change catalog item and its fields |
+| `%LOCALAPPDATA%\Asgard\settings\heimdall.json` | Heimdall's form file: the security change catalog item, its fields, and the user name to sign in with. Never a password |
 | `%LOCALAPPDATA%\Asgard\settings\heimdall-templates.json` | Your Heimdall templates. Heimdall won't overwrite this file if it can't read it. It's version 2 since template variables; Heimdall reads version 1 and writes version 2 the next time you change a template, so an older Heimdall can't read it after that |
 | `%LOCALAPPDATA%\Asgard\heimdall\libraries` | The libraries Heimdall imported, one `.library` file each, encrypted with DPAPI for your Windows account |
 | `%LOCALAPPDATA%\Asgard\odin` | Odin's files: `config.json`, its DPAPI-protected Jira token, logs, calendar exports, `last_run.json`; its records are in Muninn. Odin moves its old `%LOCALAPPDATA%\meeting2jira` here the first time it runs, and keeps the old `state.db` as `state.db.migrated-DATE` for 30 days |

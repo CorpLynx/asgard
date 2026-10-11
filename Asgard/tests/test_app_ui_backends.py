@@ -436,7 +436,7 @@ class BaldurGitHubTests(tb.MuninnCase):
 class SettingsContractTests(Home):
     """The Settings page builds each app's section from what its backend declares (registry.py)."""
 
-    KINDS = {"text", "number", "bool", "choice", "list", "time"}
+    KINDS = {"text", "number", "bool", "choice", "list", "time", "secret"}
 
     def backends(self):
         out = []
@@ -446,8 +446,8 @@ class SettingsContractTests(Home):
                 out.append((app.id, backend))
         return out
 
-    def test_odin_and_baldur_both_offer_a_section(self):
-        self.assertEqual([app for app, _ in self.backends()], ["baldur", "odin"])
+    def test_odin_baldur_and_heimdall_all_offer_a_section(self):
+        self.assertEqual([app for app, _ in self.backends()], ["baldur", "heimdall", "odin"])
 
     def test_every_declared_field_is_one_the_page_can_draw(self):
         for app, backend in self.backends():
@@ -555,6 +555,63 @@ class SettingsContractTests(Home):
         self.assertEqual(b.settings_values()["jira.transition_to"], "Done")
         self.assertEqual(b.set_settings({"jira.transition_to": ""}), {"message": "Saved."})
         self.assertEqual(b.settings_values()["jira.transition_to"], "")
+
+    def test_no_app_ever_hands_a_secret_back_to_the_window(self):
+        """A secret field is write-only: settings_values says "saved" or "", never the secret itself."""
+        for app, backend in self.backends():
+            secrets_declared = [f["key"] for g in backend.settings_schema() for f in g["fields"]
+                                if f["kind"] == "secret"]
+            values = backend.settings_values()
+            for key in secrets_declared:
+                with self.subTest(app=app, key=key):
+                    self.assertIn(values[key], ("", "saved"))
+
+    def test_heimdall_saves_the_instance_and_the_user_name_but_never_the_password(self):
+        from heimdall import ui_backend
+        b = ui_backend.Backend()
+        b.init_form()
+        path = Path(b.settings_files()[0]["path"])
+        self.assertEqual(b.set_settings({"instance_url": "https://dev99.service-now.com", "username": "bdoe",
+                                         "ui": "portal", "attempts": "4"}), {"message": "Saved."})
+        values = b.settings_values()
+        self.assertEqual(values["instance_url"], "https://dev99.service-now.com")
+        self.assertEqual((values["username"], values["ui"], values["attempts"]), ("bdoe", "portal", 4))
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        self.assertTrue([k for k in raw if k.startswith("_")], "the file's comments must survive a save")
+        self.assertNotIn("password", raw)
+
+        # The password goes to the secret store, which off Windows is an environment variable.
+        from asgard import secrets as store
+        name = store.env_name("heimdall", "dev99.service-now.com")
+        self.assertEqual(b.settings_values()["password"], "")
+        os.environ[name] = "sekrit"
+        self.addCleanup(lambda: os.environ.pop(name, None))
+        self.assertEqual(b.settings_values()["password"], "saved")
+        self.assertNotIn("sekrit", path.read_text(encoding="utf-8-sig"))
+        self.assertNotIn("sekrit", json.dumps(b.settings_values()))
+        self.assertNotIn("sekrit", json.dumps(b.credentials()))
+
+    def test_heimdall_refuses_a_bad_instance_address_and_writes_nothing(self):
+        from heimdall import ui_backend
+        b = ui_backend.Backend()
+        b.init_form()
+        path = Path(b.settings_files()[0]["path"])
+        before = path.read_text(encoding="utf-8-sig")
+        self.assertIn("https://", b.set_settings({"instance_url": "ftp://nope"})["error"])
+        self.assertEqual(path.read_text(encoding="utf-8-sig"), before)
+        self.assertIn("whole number", b.set_settings({"attempts": "many"})["error"])
+        self.assertIn("isn't a setting", b.set_settings({"fields": []})["error"])
+
+    def test_heimdall_needs_the_address_before_a_password_and_leaves_an_empty_box_alone(self):
+        from heimdall import ui_backend
+        b = ui_backend.Backend()
+        b.init_form()
+        b.set_settings({"instance_url": "https://dev99.service-now.com"})
+        self.assertEqual(b.set_settings({"password": ""}), {"message": "Nothing to change."})
+        reply = b.set_settings({"password": " spaced "})
+        self.assertIn("starts or ends with a space", reply["error"])
+        if os.name != "nt":            # no Credential Manager here, which is itself worth saying clearly
+            self.assertIn("ASGARD_SECRET_HEIMDALL", b.set_settings({"password": "pw"})["error"])
 
     def test_settings_survive_being_written_from_several_threads(self):
         """The Dashboard reads on a worker thread while the Settings page writes; one fixed temp

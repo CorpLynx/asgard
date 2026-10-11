@@ -19,7 +19,7 @@ Logged time is always an estimate. On a day of back-to-back calls, commits, revi
 
 1. **Every number carries its basis.** "2h15m from 7 commits in 3 sessions, 09:12–16:40" can be audited. "2h15m" can't. The basis is stored with the estimate, not reconstructed later.
 2. **Bias down, consistently.** Every cap, rounding and tie-break goes down. A slightly low estimate is defensible; one that swings unpredictably can't be calibrated.
-3. **Baldur proposes, you approve.** Nothing reaches Jira or a timesheet without your approval in Baldur, and only Odin posts to Jira; Muninn's checks enforce that order (Muninn rule 8).
+3. **Baldur proposes, you approve.** Nothing reaches Jira or a timesheet without an approval in Baldur, and only Odin posts to Jira; Muninn's checks enforce that order (Muninn rule 8). The approval is yours, day by day, unless you switch on `auto_approve` (see Settings): then Baldur may approve its own figures for days nothing is odd about, which is you deciding once instead of daily. An AI's figure is never approved that way.
 4. **Say what can't be seen.** Design talks, code review without commits and thinking leave no trace. The day report names that gap instead of implying the total is the whole day.
 5. **Metadata only.** Baldur reads commit times, subjects, branch names and line counts, never diffs, and no code reaches a model. AI review sends metadata; its `content` mode is refused, because Asgard never sends code off the machine (Asgard rule 6; decided 2026-10-09).
 
@@ -145,7 +145,7 @@ Under `ambient`, session 1 counts 160 × 0.5 + 25 = 105 minutes and session 2 co
 Baldur tells you when someone asks for your review, and when someone reviews your pull request, so neither waits in email. It only reads GitHub; it never comments, approves or merges.
 
 - **What it syncs.** For each repo with `github_repo` set, your pull requests and their reviews. Across GitHub, every open PR that requests your review, from the search `is:pr is:open review-requested:@me`. A PR in a repo you haven't cloned adds a review-only `repos` row: alerted on, never estimated.
-- **When.** Every `poll_minutes` (5) while Baldur runs, using conditional requests, so an unchanged answer doesn't count against GitHub's rate limit. With `run_at_logon`, Baldur starts quietly from your Startup folder, which needs no admin rights.
+- **When.** Every `poll_minutes` (5) while Baldur's week page is open, using conditional requests, so an unchanged answer doesn't count against GitHub's rate limit. The page's timer stops when the page does, so nothing polls behind it. Away from the window, the scheduled refresh checks GitHub each time it runs (below), which is how the list stays current without a program sitting in memory. `run_at_logon` is still in the settings file and nothing acts on it; the scheduled task replaced the need for it.
 - **Alerts.** A Windows notification from Baldur's notification-area icon, raised through `Shell_NotifyIcon` from ctypes, so nothing is installed or registered. Clicking it opens the PR. Each request alerts once (`notified_at`), a re-request alerts again, drafts don't alert, and with `quiet_outside_tour` alerts wait for your tour of duty. If policy blocks notifications, the tile badge still works.
 - **Reviews of your PRs.** An approval or a request for changes alerts you once per review (`pr_reviews.notified_at`).
 - **The tile.** Asgard's launcher reads `v_tile_badges`, so Baldur's tile shows "2 reviews requested" even while Baldur is closed.
@@ -198,14 +198,35 @@ Your git identities aren't a Baldur setting: they live in Muninn's `identities`,
 | `round_to_minutes` | `15` | Each ticket's daily total rounds down to this |
 | `tour_of_duty` | `{"start": "07:30", "end": "16:00", "unpaid_minutes": 30}` | Flags long days in the report and sets quiet hours for alerts |
 | `github_api` | `""` | Your GitHub's address. For GitHub Enterprise Server the host is enough (`github.agency.gov`); Baldur stores `https://github.agency.gov/api/v3`. github.com and GHE.com addresses work too. It also decides which remotes are GitHub repositories. Empty turns pull request features off |
-| `poll_minutes` | `5` | How often Baldur checks GitHub while it runs |
+| `poll_minutes` | `5` | How often Baldur checks GitHub while its week page is open (1 to 1440; the window offers up to 120). The scheduled refresh checks once per run, whatever this says |
 | `alerts` | `true` | Windows notifications for review requests and reviews of your PRs |
 | `quiet_outside_tour` | `true` | Hold alerts outside your tour of duty |
-| `run_at_logon` | `false` | Start Baldur in the notification area at logon, from your Startup folder |
+| `run_at_logon` | `false` | Declared, and nothing reads it. It was the plan for keeping pull requests fresh with Baldur in the notification area; `asgard baldur schedule` does that job without a resident program |
 | `commit_hook` | `false` | Install the `prepare-commit-msg` hook that adds the branch's key to commit messages |
 | `review_mode` | `"off"` | AI review: `off` or `metadata`. `content` is refused (principle 5) |
 
-Four old settings are gone on purpose. Approval can't be switched off and untracked minutes can't be logged; the database refuses both rather than trusting a flag. `output` is gone because Odin posts, and `calendar_source` because Odin syncs the calendar.
+| `auto_approve` | `false` | Approve the engine's own figures for days nothing is odd about, without you looking at them. See below |
+| `auto_approve_min_age_days` | `2` | How long a day waits before auto-approve may decide it |
+| `auto_approve_max_days_per_run` | `5` | At most this many days are auto-approved in one run, oldest first |
+
+Three old settings are gone on purpose. Untracked minutes can't be logged; the database refuses that rather than trusting a flag. `output` is gone because Odin posts, and `calendar_source` because Odin syncs the calendar.
+
+**Approval could once be switched off, that setting was removed, and `auto_approve` brings a narrower form of it back** (decided 2026-10-11, at the owner's request, superseding the earlier removal). It is shaped like the on-premises Odin's `plan` and `apply`, because that is the shape the owner already reads fluently:
+
+- **`plan`** shows exactly which days would be approved, at what figures, and why each of the others waits. It decides nothing, needs no setting and no console, and an agent may run it.
+- **`apply`** prints the same list, then approves it once you type `YES` in capitals. **It needs no setting**, because typing YES while looking at the figures is the approval; lowercase `yes` is refused with a word about why. Without a console it refuses rather than assume consent, unless you pass `--yes` yourself.
+- **`auto_approve`** is only about the unattended path: whether a scheduled refresh may apply the plan with nobody watching. That needs the setting on *and* the caller asking (`refresh --auto-approve`). The flag is what Baldur's agent guard matches, so an agent running a plain `refresh` can never approve; the setting is what makes a stray flag harmless. `auto-approve --on` prints what it means and waits for a typed `yes`.
+
+The rest holds for both paths, and fails closed on every one:
+- **It never takes an AI's number.** A day with AI-assisted figures is left for you, because a suggestion that differs is exactly the signal a person should look. The AI-assisted path still needs `approve --ai ID` with the id you were shown.
+- **It never decides a day the report would flag**: a weekend, a day scaled down to the cap, meetings plus development over the day, an expired reflog, a squash merge linking sessions, or a total past the paid minutes in your tour of duty.
+- **It waits.** A day younger than `auto_approve_min_age_days` is left, so a late commit or a key added tomorrow is in first.
+- **It is capped**, oldest first, so switching it on with a year of history can't approve hundreds of days at once.
+- **It raises nothing and approves no untracked time.** Each ticket is approved at the engine's own figure.
+
+What it does not change: approving is still final, Odin still posts on its next run without asking again, and nothing in Asgard can take posted time back.
+
+An **open naming divergence**: the on-premises Odin uses `plan` and `apply`, Asgard's Odin uses `preview` and `push`, and Baldur now uses `plan` and `apply`. Two of the three agree; lining Asgard's Odin up with them would make the suite read the same way everywhere, and is worth a decision.
 
 ## Review, approval and logging
 
@@ -434,7 +455,16 @@ Steps 1–7 deliver review alerts and the report-only product. Posting starts on
 
 1. **Muninn writer module.** Built: `asgard.muninn` ships in Asgard 0.2 with schema v1, Baldur's approval rules and Odin's side. Every later step writes through it.
 2. **Port and fix.** Superseded: `gitwork.py` wasn't available, so Baldur was built from this spec, with the three policies from the start. The worked example is a named test.
-3. **Git collector.** Built in Asgard 0.3: repo discovery (worktrees fold into their repository), your commits by email with `patch-id`, every working folder's HEAD reflog, keys in the four-source order, first-run identity setup, and co-authored commits for the report. Each collection reads `history_days` of history; `collect --full` reads all of it. `cli.py schedule` adds the weekly per-user scheduled task, because reflog expires.
+3. **Git collector.** Built in Asgard 0.3: repo discovery (worktrees fold into their repository), your commits by email with `patch-id`, every working folder's HEAD reflog, keys in the four-source order, first-run identity setup, and co-authored commits for the report. Each collection reads `history_days` of history; `collect --full` reads all of it. `asgard baldur schedule` adds the per-user scheduled task, because reflog expires.
+
+### The scheduled refresh
+
+`asgard baldur refresh` is one command for what a scheduled run should do: read git, estimate the days it touched, then check GitHub. It is also useful by hand, and `--quiet` prints only problems.
+
+- **It decides nothing.** Approving stays the person's, so a scheduled run leaves the days waiting in `asgard baldur days`. A test asserts the task's action never contains `approve`, `reject`, `change`, `actual` or `--ai`, which is also why the agent guard needs no new entry: `refresh` is collection and estimation, which an agent may already run.
+- **GitHub can't break it.** A GitHub failure is reported and the exit code is 1, but the estimates are already stored by then. GitHub being on with no token saved says which command saves one.
+- **Cadence.** `asgard baldur schedule --cadence daily|weekly [--day MON] [--time 09:00]`, still `/IT` (only while you're signed in, no stored password, no admin rights). `--days N` narrows what a run re-estimates, so a daily task needn't redo a fortnight.
+- **The task is `Asgard Baldur refresh`.** It was `Asgard Baldur collect` when it only collected; registering or removing the new one deletes the old, so the two can't both run. Valhalla removes both names.
 4. **GitHub.** Pull requests and reviews from the owner's GitHub Enterprise Server, the review-request search, alerts and the tile badge. Without a token, this step switches itself off. Asgard 0.3.1 built the local half: `github_api` takes the server's host, only remotes on it count as GitHub repositories, and its squash commits are skipped whatever its no-reply address. Asgard 0.4.0 built the sync (`github.py`): a read-only token in Credential Manager, conditional requests, pull requests with their reviews and commits, the review-request search, review-only repositories, and PR head-branch keys. Alerts aren't built.
 5. **Odin moves into Muninn** (decided), following the steps in the Muninn design doc. Until its calendar is there, Baldur's meeting policy falls back to `independent`, and until its posting job is, Baldur works report-only.
 6. **Estimator.** Built in Asgard 0.3: writes `estimate_runs`, sessions and `day_proposals`, with basis text and `basis_hash` from the first version, so the audit trail is never retrofitted. Until the window exists, `apps/baldur/cli.py` is the interface: setup, collect, repos, estimate, days, report, approve, reject, change, keys and schedule.

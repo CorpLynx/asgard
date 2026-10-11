@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import browser
+from . import auth, browser
 from . import form as forms
 from . import library as libs
 from . import templates as tpl
@@ -228,6 +228,98 @@ class Backend:
     def settings_files(self) -> List[Dict[str, str]]:
         return [{"label": "Form file", "path": str(self._form_file())},
                 {"label": "Templates", "path": str(self._templates_file())}]
+
+    # ---------------------------------------------------------------- settings in the window
+    # By key into the form file, except "password", which is never in a file: it goes to Windows
+    # Credential Manager through asgard.secrets (heimdall/auth.py). The form's fields stay file-only,
+    # because they are a list of objects; Settings offers to open the file for those.
+    SETTINGS: List[Dict[str, Any]] = [
+        {"title": "The ServiceNow instance", "fields": [
+            {"key": "instance_url", "label": "Address", "kind": "text",
+             "placeholder": "https://yourinstance.servicenowservices.com",
+             "help": "The https:// address of the instance. Heimdall never signs in to anything else."},
+            {"key": "catalog_sys_id", "label": "Catalog item", "kind": "text",
+             "placeholder": "0123456789abcdef0123456789abcdef",
+             "help": "The 32 characters after sysparm_id= or sys_id= in the security change item's address."},
+            {"key": "ui", "label": "Which page", "kind": "choice",
+             "options": [{"value": "classic", "label": "Classic form"},
+                         {"value": "portal", "label": "Service Portal"}]},
+        ]},
+        {"title": "Signing in",
+         "help": "On the workstation Heimdall signs in through Edge with your certificate and PIN, and needs "
+                 "neither of these. They are for an instance that wants a name and a password, such as a "
+                 "developer instance.", "fields": [
+            {"key": "username", "label": "User name", "kind": "text", "placeholder": "Leave empty to use Edge",
+             "help": "Kept in the form file. It isn't a secret."},
+            {"key": "password", "label": "Password", "kind": "secret",
+             "help": "Kept in Windows Credential Manager for your account, never in a settings file, in "
+                     "Muninn or in a log. Set the address first, because it is saved per instance."},
+            {"key": "channel", "label": "Browser", "kind": "text", "placeholder": "msedge"},
+            {"key": "sign_in_timeout_s", "label": "Wait for sign-in", "kind": "number",
+             "min": 10, "max": 3600, "unit": "seconds"},
+            {"key": "attempts", "label": "Tries per field", "kind": "number", "min": 1, "max": 10},
+        ]},
+    ]
+    SECRETS = ("password",)
+
+    def settings_schema(self) -> List[Dict[str, Any]]:
+        return [dict(group) for group in self.SETTINGS]
+
+    def settings_values(self) -> Dict[str, Any]:
+        """What each field holds. A secret is never returned: "saved" or "" says whether there is one."""
+        values = forms.values(self._form_file())
+        out: Dict[str, Any] = {k: v for k, v in values.items()}
+        out["password"] = "saved" if auth.status(values["instance_url"], values["username"]).saved else ""
+        return {f["key"]: out.get(f["key"], "") for g in self.SETTINGS for f in g["fields"]}
+
+    def set_settings(self, changes: Dict[str, Any]) -> Dict[str, Any]:
+        """Save some settings. The form's own validator decides; nothing is written if it refuses."""
+        fields = {f["key"]: f for g in self.SETTINGS for f in g["fields"]}
+        unknown = sorted(set(changes) - set(fields))
+        if unknown:
+            return {"error": f"{', '.join(unknown)} isn't a setting the window edits."}
+        said = []
+        secret_changes = {k: v for k, v in changes.items() if k in self.SECRETS}
+        ready: Dict[str, Any] = {}
+        for key, value in changes.items():
+            if key in self.SECRETS:
+                continue
+            if fields[key]["kind"] == "number":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    return {"error": f"{fields[key]['label']} must be a whole number."}
+            elif isinstance(value, str):
+                value = value.strip()
+            ready[key] = value
+        if ready:
+            try:
+                forms.set_values(ready, self._form_file())
+            except FormError as exc:
+                return {"error": str(exc)}
+            said.append("Saved.")
+        for key, value in secret_changes.items():
+            # "" means leave the saved one alone (the box shows no secret to begin with); None is
+            # the Forget button, and anything else is a new secret.
+            label = fields[key]["label"]
+            values = forms.values(self._form_file())
+            try:
+                if value is None:
+                    said.append(f"{label} removed." if auth.clear_password(values["instance_url"])
+                                else f"There was no saved {label.lower()}.")
+                elif str(value).strip():
+                    host = auth.save_password(values["instance_url"], str(value))
+                    said.append(f"{label} saved for {host}.")
+            except auth.AuthError as exc:
+                return {"error": str(exc)}
+        return {"message": " ".join(said) or "Nothing to change."}
+
+    def credentials(self) -> Dict[str, Any]:
+        """Who Heimdall would sign in as, and where a password would come from. Never the password."""
+        values = forms.values(self._form_file())
+        found = auth.status(values["instance_url"], values["username"])
+        return {"host": found.host, "username": found.username, "saved": found.saved,
+                "where": found.where, "line": found.line()}
 
 
 def _given(values: Optional[Dict[str, Any]]) -> Dict[str, str]:

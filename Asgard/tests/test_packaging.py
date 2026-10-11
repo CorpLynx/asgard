@@ -144,7 +144,7 @@ class FrozenProcessTests(Home):
         from baldur import cli as baldur_cli
         with self.patched(ROOT):
             action = baldur_cli.schedule_command("MON", "09:00")[-1]
-        self.assertEqual(action, f'"{self.programs(ROOT)[1]}" baldur collect --quiet',
+        self.assertEqual(action, f'"{self.programs(ROOT)[1]}" baldur refresh --quiet --auto-approve',
                          "Asgard.exe takes the asgard command itself (frozen_main.dispatches)")
 
     def test_ysildirs_client_entry_uses_the_console_program(self):

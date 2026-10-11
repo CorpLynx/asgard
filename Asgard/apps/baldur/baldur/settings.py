@@ -50,6 +50,12 @@ DEFAULTS: Dict[str, Any] = {
     "run_at_logon": False,
     "commit_hook": False,
     "review_mode": "off",
+    # Auto-approve: the engine's own figures, for days nothing is odd about, without you looking at
+    # them. Off by default, and the caller must ask for it too (baldur/auto.py). An AI's figure is
+    # never taken this way.
+    "auto_approve": False,
+    "auto_approve_min_age_days": 2,
+    "auto_approve_max_days_per_run": 5,
 }
 
 # The settings each estimate run records in estimate_runs.params.
@@ -208,6 +214,8 @@ def validate(values: Dict[str, Any]) -> Dict[str, Any]:
     number("ambient_weight", 0, 1, integer=False)
     number("concurrent_fraction", 0, 1, integer=False)
     number("poll_minutes", 1, 1440)
+    number("auto_approve_min_age_days", 0, 30)
+    number("auto_approve_max_days_per_run", 1, 100)
     if v["min_session_minutes"] > v["max_session_minutes"]:
         raise SettingsError("min_session_minutes can't be more than max_session_minutes")
     if v["policy"] not in POLICIES:
@@ -221,7 +229,7 @@ def validate(values: Dict[str, Any]) -> Dict[str, Any]:
     unpaid = tour.get("unpaid_minutes", 0)
     if isinstance(unpaid, bool) or not isinstance(unpaid, int) or not 0 <= unpaid <= 240:
         raise SettingsError("tour_of_duty.unpaid_minutes must be a whole number from 0 to 240")
-    for flag in ("alerts", "quiet_outside_tour", "run_at_logon", "commit_hook"):
+    for flag in ("alerts", "quiet_outside_tour", "run_at_logon", "commit_hook", "auto_approve"):
         if not isinstance(v[flag], bool):
             raise SettingsError(f"{flag} must be true or false")
     v["github_api"] = github_api_url(v["github_api"])

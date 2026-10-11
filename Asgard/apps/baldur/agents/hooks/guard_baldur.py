@@ -3,8 +3,9 @@
 
 The person decides what time is logged (Asgard rules 4 and 5). An agent may record its own
 estimates (ai record), read what Baldur has (ai list, ai show, report, days, keys SHA) and run
-collection or an estimate; it may not:
+collection or an estimate (collect, estimate, a plain refresh, plan); it may not:
 - approve, reject or change a figure, or take AI-assisted figures (approve --ai);
+- approve what a plan shows (apply), or let scheduled runs do it (auto-approve, refresh --auto-approve);
 - note real hours (actual), which calibration trusts as ground truth, or accept a calibration;
 - change Baldur's settings, a commit's keys, which repositories count, the schedule or the
   GitHub token;
@@ -47,7 +48,7 @@ MUNINN_MAINTENANCE = {"restore", "repair", "retention"}
 TEXT_OPTIONS = {"-m", "--message", "--summary", "--note"}
 MAX_DEPTH = 4                         # quoted commands inside quoted commands
 
-DECISIONS = {"approve", "reject", "change", "actual", "schedule"}
+DECISIONS = {"approve", "reject", "change", "actual", "schedule", "auto-approve", "auto_approve", "apply"}
 MESSAGE = ("Blocked by Baldur's agent guard: {what} is the person's decision, not an agent's. "
            "Record your estimate with `baldur.cmd ai record ...` and tell the person what you found; "
            "they approve in Baldur. (Baldur agent guide: baldur.cmd ai guide)")
@@ -235,6 +236,10 @@ def _app_verdict(command: str) -> Optional[str]:
             return MESSAGE.format(what=f"`{sub}`")
         if sub == "calibrate" and _flag(flags, "--accept"):
             return MESSAGE.format(what="Accepting a calibration")
+        # A plain refresh is collection and an estimate, which an agent may run. With --auto-approve
+        # it can decide a day, so the flag is blocked: the person opts into that, not an agent.
+        if sub == "refresh" and _flag(flags, "--auto-approve", "--auto_approve"):
+            return MESSAGE.format(what="Approving days automatically (refresh --auto-approve)")
         if sub == "setup" and args[1:]:
             return MESSAGE.format(what="Changing Baldur's setup")
         if sub == "repos" and _flag(flags, "--on", "--off"):
@@ -281,7 +286,23 @@ def verdict(command: str, depth: int = 0) -> Optional[str]:
                 why = verdict(_unquote(word), depth + 1)
                 if why:
                     return why
+    # Last pass: the same line with every quote taken out. A command can quote its inner quotes
+    # with backslashes (cmd /c "baldur \"approve\" --date today"), which splits a word in the
+    # middle, so the program and its subcommand are never seen together and nothing above matches.
+    # Without the quotes they are plain words again. Found by the independent review of 2026-10-11
+    # (F1), where it let every blocked command through, not only this change's.
+    # Tokenise first, so a quoted commit message is still one word and _not_text drops all of it;
+    # only then take the quotes out, which puts a program and its subcommand back beside each other.
+    kept = " ".join(_not_text(_tokens(command)))
+    bare = _DEQUOTE.sub(" ", kept)
+    if bare != kept:
+        why = _app_verdict(bare)
+        if why:
+            return why
     return None
+
+
+_DEQUOTE = re.compile(r"""[\\]?["']""")
 
 
 def main() -> int:

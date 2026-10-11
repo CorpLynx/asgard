@@ -291,6 +291,11 @@ def render(text: str, filled: Dict[str, str], placeholders: Dict[str, str]) -> s
     return "".join(out)
 
 
+def valid_name(name: Any) -> bool:
+    """Whether name could be a variable's name (letters, digits and underscores, not starting with a digit)."""
+    return isinstance(name, str) and bool(_NAME_RE.fullmatch(name.strip()))
+
+
 def parse_assignments(items: Sequence[str]) -> Dict[str, str]:
     """--var "NAME=value" pairs into a dict. Splits on the first '=' so values may contain one."""
     out: Dict[str, str] = {}

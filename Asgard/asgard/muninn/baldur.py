@@ -647,7 +647,7 @@ def store_review(con: sqlite3.Connection, local_date: str, reply: Any, *, eviden
     with transaction(con):
         rows = _open_rows(con, local_date)
         if not rows:
-            raise ReviewRejected(f"{local_date} has no open proposals to review. Run cli.py estimate first.")
+            raise ReviewRejected(f"{local_date} has no open proposals to review. Run asgard baldur estimate first.")
         baseline = {r["work_item_key"]: int(r["minutes_proposed"]) for r in rows}
         checked = check_review(local_date, baseline, evidence, reply, step=step,
                                floors=held_minutes(con, local_date, baseline))

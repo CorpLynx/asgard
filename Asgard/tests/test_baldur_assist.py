@@ -518,9 +518,9 @@ class AssistCliTests(AssistCase):
         self.assertEqual(shown["method"], "agent")
         self.assertEqual({x["key"]: (x["estimate"], x["ai_assisted"]) for x in shown["tickets"]},
                          {"PROJ-42": (90, 45), "PROJ-51": (30, 75)})
-        self.assertEqual(shown["take"], f"cli.py approve --date 2026-10-01 --ai {shown['id']}")
+        self.assertEqual(shown["take"], f"asgard baldur approve --date 2026-10-01 --ai {shown['id']}")
         code, out, _ = self.cli("ai", "show", "2026-10-01")
-        self.assertIn(f"Take them: cli.py approve --date 2026-10-01 --ai {shown['id']}", out)
+        self.assertIn(f"Take them: asgard baldur approve --date 2026-10-01 --ai {shown['id']}", out)
         self.assertIn("PROJ-42: Reviewed: agent estimates (copilot, kiro, 3 reports) lowered this from 1h30m to 45m",
                       out)
         code, out, _ = self.cli("report", "2026-10-01")
@@ -576,7 +576,7 @@ class AssistCliTests(AssistCase):
         self.assertIn("PROJ-42 1h30m -> 1h15m", out)
         self.assertIn("PROJ-42: Odin's worklog comment will say: Reviewed: AI review (clipboard, copilot) "
                       'lowered this from 1h30m to 1h15m ("more")', out)
-        self.assertRegex(out, r"Take them with: cli.py approve --date 2026-10-01 --ai [0-9a-f]{8}")
+        self.assertRegex(out, r"Take them with: asgard baldur approve --date 2026-10-01 --ai [0-9a-f]{8}")
 
 
 # --------------------------------------------------------------------------
@@ -728,7 +728,7 @@ class AgentGuardTests(unittest.TestCase):
         self.assertEqual(run_hook("guard_baldur", "").returncode, 0)
 
     def test_the_reminder_follows_a_commit_only(self):
-        self.assertIn("baldur.cmd ai record", run_hook("after_commit", 'git commit -m "retry"').stdout)
+        self.assertIn("asgard baldur ai record", run_hook("after_commit", 'git commit -m "retry"').stdout)
         self.assertIn("ai record", run_hook("after_commit", "git -C repo commit --amend --no-edit").stdout)
         for quiet in ("git status", "git commit --dry-run -m x", "git commit --help", "echo commit"):
             with self.subTest(quiet):

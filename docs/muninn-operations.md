@@ -19,17 +19,17 @@ Keep the folder out of OneDrive: a synced database fights the sync engine for it
 
 ## Commands
 
-Run from a console with `python.exe` (not `pythonw.exe`, which prints nothing), in Asgard's install folder (`%LOCALAPPDATA%\Asgard\app`). In the packaged build, run `asgard-cli.exe --muninn status` and so on in its folder ([packaging.md](packaging.md)):
+Run these from any console (setup puts `asgard` on your Path; open a new terminal after it). The older forms still work: `python Asgard.pyw --muninn status` in `%LOCALAPPDATA%\Asgard\app`, or `asgard-cli.exe --muninn status` in the packaged build ([packaging.md](packaging.md)):
 
 ```
-python Asgard.pyw --muninn prepare           create Muninn or bring it up to date, as opening Asgard does
-python Asgard.pyw --muninn status            version, sizes, backups, last housekeeping
-python Asgard.pyw --muninn check             look for damage and for anything that should never happen
-python Asgard.pyw --muninn repair            rebuild the search index; fix event cursors
-python Asgard.pyw --muninn backup            a copy now
-python Asgard.pyw --muninn restore [FILE]    put a backup back (newest if FILE is left out); asks first
-python Asgard.pyw --muninn maintain          run housekeeping now
-python Asgard.pyw --muninn retention on|off|show
+asgard muninn prepare           create Muninn or bring it up to date, as opening Asgard does
+asgard muninn status            version, sizes, backups, last housekeeping
+asgard muninn check             look for damage and for anything that should never happen
+asgard muninn repair            rebuild the search index; fix event cursors
+asgard muninn backup            a copy now
+asgard muninn restore [FILE]    put a backup back (newest if FILE is left out); asks first
+asgard muninn maintain          run housekeeping now
+asgard muninn retention on|off|show
 ```
 
 Exit codes: 0 fine, 1 `check` found errors, 2 couldn't run.
@@ -64,7 +64,7 @@ Exit codes: 0 fine, 1 `check` found errors, 2 couldn't run.
 ## Undoing a bad upgrade
 
 1. Close every Asgard app and Odin.
-2. `python Asgard.pyw --muninn restore muninn-YYYYMMDD-before-vN.db`
+2. `asgard muninn restore muninn-YYYYMMDD-before-vN.db`
 3. Put back the previous Asgard version (see [updates.md](updates.md)); otherwise the next start upgrades the file again.
 
 ## Moving to a new machine

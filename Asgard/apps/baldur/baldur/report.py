@@ -225,7 +225,7 @@ def _render_day(con: sqlite3.Connection, est: E.Estimate, day: dt.date, settings
     if untracked:
         n = len(untracked.commits)
         out.append(line("Untracked commits (no Jira key)", E.fmt(untracked.minutes_proposed),
-                        f"{store.plural(n, 'commit')}; add a key with: cli.py keys SHA PROJ-1"))
+                        f"{store.plural(n, 'commit')}; add a key with: asgard baldur keys SHA PROJ-1"))
     else:
         out.append(line("Untracked commits (no Jira key)", "0m"))
     reviews = con.execute("SELECT r.name || '#' || p.number FROM pr_reviews v JOIN pull_requests p ON p.id = v.pr_id "
@@ -281,7 +281,7 @@ def _render_day(con: sqlite3.Connection, est: E.Estimate, day: dt.date, settings
             out.append(f"  {name:<14}{E.fmt(t.estimate):>9}{in_jira:>9}   {review_text(con, t, dry_run)}")
         if any(t.open is not None for t in tickets):
             out.append("")
-            out.append(f"  Approve: cli.py approve --date {day.isoformat()}    one ticket: cli.py approve ID [--minutes 1h15m]")
+            out.append(f"  Approve: asgard baldur approve --date {day.isoformat()}    one ticket: asgard baldur approve ID [--minutes 1h15m]")
     return "\n".join(out)
 
 
@@ -302,7 +302,7 @@ def render_ai(ai: "assist.DaySuggestions", day: dt.date) -> str:
         out.append("  If you take them, Odin's worklog comments will say:")
         for t in changed:
             out.append(f"    {t.key}: {ai.posted_line(t.key)}")
-        out.append(f"  Take them: cli.py approve --date {day.isoformat()} --ai {ai.digest()}    "
+        out.append(f"  Take them: asgard baldur approve --date {day.isoformat()} --ai {ai.digest()}    "
                    "or set your own: --set KEY=TIME")
     elif ai.tickets:
         out.append("  The estimate stands: nothing here changes a figure.")

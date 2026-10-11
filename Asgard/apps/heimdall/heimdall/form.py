@@ -87,7 +87,7 @@ def load(path: Optional[Path] = None) -> Form:
     try:
         raw = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
-        raise FormError(f"No form file at {path}. Run 'heimdall init' to create one, then edit it.") from None
+        raise FormError(f"No form file at {path}. Run 'asgard heimdall init' to create one, then edit it.") from None
     except json.JSONDecodeError as exc:
         raise FormError(f"{path} is not valid JSON (line {exc.lineno}): {exc.msg}. Fix it and try again.") from None
     except OSError as exc:

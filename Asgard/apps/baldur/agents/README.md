@@ -6,7 +6,7 @@ They're the AI-assisted method's front door: the agent records, Baldur checks, y
 
 | File | What it does |
 | --- | --- |
-| `../prompts/agent-guide.md` | The full guide (version `baldur-agent-2`): when to record, what "minutes" means, the JSON form, the rules. `baldur.cmd ai guide` prints it; Ysildir serves it as its MCP instructions |
+| `../prompts/agent-guide.md` | The full guide (version `baldur-agent-2`): when to record, what "minutes" means, the JSON form, the rules. `asgard baldur ai guide` prints it; Ysildir serves it as its MCP instructions |
 | `kiro-steering.md` | The short version, as a Kiro steering file (`inclusion: auto`: loaded when a change is done or time comes up) |
 | `hooks/guard_baldur.py` | PreToolUse guard: blocks `approve`, `reject`, `change`, `actual`, `calibrate --accept`, `setup` changes, key and repository changes, `schedule`, the GitHub token, Ysildir's `tools --on/--off` and `setup`, uninstalling Asgard, and anything touching `muninn.db`, another database in Asgard's folder, `baldur.json` or `ysildir.json`, and the same through the `asgard` command (`asgard baldur approve`, `asgard muninn restore`, `asgard uninstall`, `asgard ysildir tools --on`), however it's started: `asgard`, `asgard.cmd`, `asgard-cli.exe`, `Asgard.exe`, `asgard\cli.py` or `python -m asgard.cli`. It reads commands quoted inside others (`cmd /c "..."`, `powershell -Command "..."`, `bash -lc "..."`, `Start-Process -ArgumentList`) a bare `cli.py` run from Baldur's folder, and the packaged build's `asgard-cli.exe` and `Asgard.exe` (read like `python`), but not the free text of a commit message or a report's summary |
 | `hooks/after_commit.py` | PostToolUse reminder: after a `git commit`, one line telling the agent how to record its estimate |
@@ -14,7 +14,7 @@ They're the AI-assisted method's front door: the agent records, Baldur checks, y
 ## Installing into a workspace
 
 ```
-baldur.cmd ai kiro --into C:\src\my-service
+asgard baldur ai kiro --into C:\src\my-service
 ```
 
 writes `.kiro/steering/baldur-estimates.md` and `.kiro/hooks/baldur-guard.json` and
@@ -29,7 +29,7 @@ Kiro version reads global steering; hooks stay per workspace.
 
 Your on-premises guardrails already ask the agent to estimate how long its changes take; they
 just don't put the answer anywhere Baldur can see. Keep whatever they say about *how* to
-estimate, if it's stricter, and change *where it goes* to `baldur.cmd ai record`. Check three
+estimate, if it's stricter, and change *where it goes* to `asgard baldur ai record`. Check three
 things against Baldur's guide:
 
 1. **What is estimated.** Baldur records the person's working time on the change that day, the

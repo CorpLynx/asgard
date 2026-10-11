@@ -5,6 +5,8 @@ Libraries are encrypted with Windows DPAPI. Off Windows these tests use a stand-
 HEIMDALL_UNPROTECTED_LIBRARIES=1 where they go through the command line; on Windows the command
 line tests use real DPAPI, and DpapiTests check it directly.
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -19,12 +21,13 @@ for folder in (ROOT, ROOT / "apps" / "heimdall", Path(__file__).resolve().parent
         sys.path.insert(0, str(folder))
 
 from asgard import dpapi  # noqa: E402
+from heimdall import cli  # noqa: E402
 from heimdall import library as libs  # noqa: E402
 from heimdall import templates as tpl  # noqa: E402
 from heimdall import variables as v  # noqa: E402
 from heimdall.form import FormError  # noqa: E402
 from heimdall.ui_backend import Backend  # noqa: E402
-from test_heimdall import Base  # noqa: E402
+from test_heimdall import FORM, Base  # noqa: E402
 
 ISSUE = ("We need access to {SYSTEM_NAME:TEXTBOX('string'):\"System Name\"} from "
          "{SRC_ADDR:LIBRARY('ip_library_12'):'Source'} to {DEST_ADDR:LIBRARY('ip_library_12'):'Destination'}.")
@@ -498,6 +501,236 @@ class BackendTests(LibraryCase):
                 self.b.import_library(str(self.publish()))
         with self.assertRaises(libs.LibraryError):
             self.b.import_library("  ")
+
+
+class NewCommandTests(LibraryCase):
+    """Issue #12: the commands that show what a template asks for, check it, search a library, ask for
+    missing values, and read them from a file."""
+
+    def setUp(self):
+        super().setUp()
+        self.ok("library", "import", str(self.publish()))
+        self.ok("template", "save", "Access", "--set",
+                "Short description=" + ISSUE + " Urgent: {URGENT:CHECKBOX('Emergency'):'Urgent'}",
+                "--set", "Requested for={DEST_ADDR}")
+
+    def test_the_program_is_named_asgard_heimdall(self):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), self.assertRaises(SystemExit):
+            cli.main(["--help"])
+        self.assertIn("usage: asgard heimdall", out.getvalue())
+        self.assertIn("usage: myprog", io.StringIO(cli.build_parser("myprog").format_usage()).read())
+        self.assertEqual(self.fails("template", "show", "Nope").count("heimdall "),
+                         self.fails("template", "show", "Nope").count("asgard heimdall "),
+                         "every command a message names is the asgard form")
+
+    def test_no_message_names_the_bare_heimdall_command(self):
+        import re
+        folder = ROOT / "apps" / "heimdall" / "heimdall"
+        for path in sorted(folder.glob("*.py")):
+            text = path.read_text(encoding="utf-8")
+            bare = re.findall(r"""['"`]heimdall (?:init|fields|template|library|fill)\b""", text)
+            self.assertEqual(bare, [], f"{path.name} still tells people to run 'heimdall ...'")
+
+    def test_template_variables_has_its_own_stable_shape(self):
+        body = json.loads(self.ok("template", "variables", "Access", "--json"))
+        self.assertEqual(sorted(body), ["problems", "template", "variables"])
+        self.assertEqual((body["template"], body["problems"]), ("Access", []))
+        self.assertEqual([x["name"] for x in body["variables"]], ["SYSTEM_NAME", "SRC_ADDR", "DEST_ADDR", "URGENT"])
+        first = body["variables"][0]
+        self.assertEqual(sorted(first), sorted(["name", "label", "kind", "required", "description", "validators",
+                                                "options", "library", "hint"]))
+        self.assertEqual((first["kind"], first["validators"], first["required"]), ("textbox", ["string"], True))
+        self.assertEqual((body["variables"][1]["kind"], body["variables"][1]["library"]), ("library", "ip_library_12"))
+        self.assertFalse(body["variables"][3]["required"])
+        text = self.ok("template", "variables", "Access")
+        self.assertIn("SYSTEM_NAME: System Name, text (string)", text)
+        self.assertIn("URGENT: Urgent, true or false", text)
+        self.assertIn("(optional)", text)
+
+    def test_template_variables_of_a_template_that_asks_for_nothing_or_needs_fixing(self):
+        self.ok("template", "save", "Plain", "--set", "Short description=Hello")
+        self.assertIn("asks for nothing", self.ok("template", "variables", "Plain"))
+        self.assertEqual(json.loads(self.ok("template", "variables", "Plain", "--json"))["variables"], [])
+        self.write_form({**FORM, "fields": FORM["fields"][1:]})          # the form lost "Short description"
+        code, out, _ = self.run_cli("template", "variables", "Plain", "--json")
+        self.assertEqual(code, 1)
+        self.assertIn("not a field on the form", json.loads(out)["problems"][0])
+        self.assertIn("No template", self.fails("template", "variables", "Nope"))
+
+    def test_template_check_says_what_a_fill_needs_without_values(self):
+        out = self.ok("template", "check", "Access")
+        self.assertIn('"Access" is ready.', out)
+        self.assertIn("asks for 4 values: SYSTEM_NAME, SRC_ADDR, DEST_ADDR, URGENT", out)
+        self.assertIn("The library ip_library_12 is on this computer.", out)
+        body = json.loads(self.ok("template", "check", "Access", "--json"))
+        self.assertEqual((body["ok"], body["problems"]), (True, []))
+        self.assertEqual(body["libraries"], [{"name": "ip_library_12", "present": True}])
+        self.assertEqual(len(body["variables"]), 4)
+
+    def test_template_check_finds_a_library_that_isnt_here(self):
+        self.ok("library", "remove", "ip_library_12")
+        code, out, _ = self.run_cli("template", "check", "Access")
+        self.assertEqual(code, 1)
+        self.assertIn("can't be filled yet", out)
+        self.assertIn("library ip_library_12 isn't on this computer", out)
+        code, out, _ = self.run_cli("template", "check", "Access", "--json")
+        body = json.loads(out)
+        self.assertEqual((code, body["ok"]), (1, False))
+        self.assertEqual(body["libraries"], [{"name": "ip_library_12", "present": False}])
+
+    def test_library_search_shows_names_and_descriptions_never_values(self):
+        out = self.ok("library", "search", "ip_library_12", "servers")
+        self.assertIn("web-servers  - DMZ web tier", out)
+        self.assertIn("db-servers  - Payroll DB", out)
+        self.assertNotIn("10.", out)
+        body = json.loads(self.ok("library", "search", "ip_library_12", "servers", "--json"))
+        self.assertEqual(sorted(body), ["library", "matches", "query", "total"])
+        self.assertEqual((body["library"], body["query"], body["total"]), ("ip_library_12", "servers", 2))
+        self.assertEqual(sorted(body["matches"][0]), ["description", "name"])
+        self.assertNotIn("10.", json.dumps(body))
+        limited = self.ok("library", "search", "ip_library_12", "servers", "--limit", "1")
+        self.assertIn("and 1 more", limited)
+        self.assertIn("Nothing matches", self.ok("library", "search", "ip_library_12", "zzz"))
+        self.assertEqual(json.loads(self.ok("library", "search", "ip_library_12", "zzz", "--json"))["total"], 0)
+        self.assertIn("--limit", self.fails("library", "search", "ip_library_12", "x", "--limit", "0"))
+        self.assertIn("No library named", self.fails("library", "search", "nope", "x"))
+
+    def test_a_vars_file_fills_in_the_values_and_var_overrides_it(self):
+        path = self.dir / "values.json"
+        path.write_text(json.dumps({"system_name": "Payroll", "SRC_ADDR": "web-servers", "DEST_ADDR": "jump-hosts",
+                                    "URGENT": True}), encoding="utf-8")
+        body = json.loads(self.ok("fill", "-t", "Access", "--dry-run", "--json", "--vars", str(path)))
+        self.assertEqual([(x["name"], x["value"]) for x in body["variables"]],
+                         [("SYSTEM_NAME", "Payroll"), ("SRC_ADDR", "10.20.0.0/24"), ("DEST_ADDR", "10.40.0.9"),
+                          ("URGENT", "Yes")])
+        body = json.loads(self.ok("fill", "-t", "Access", "--dry-run", "--json", "--vars", str(path),
+                                  "--var", "SYSTEM_NAME=Other", "--var", "URGENT=false"))
+        self.assertEqual([x["value"] for x in body["variables"] if x["name"] in ("SYSTEM_NAME", "URGENT")],
+                         ["Other", "No"])
+
+    def test_a_vars_file_that_cant_be_used_says_why(self):
+        missing = self.fails("fill", "-t", "Access", "--dry-run", "--vars", str(self.dir / "nope.json"))
+        self.assertIn("Couldn't read", missing)
+        for body, want in (("not json", "isn't JSON"), ("[1, 2]", "one object of NAME: value"),
+                           ('{"a b": "x"}', "variable name"), ('{"A": {"x": 1}}', "variable name"),
+                           ('{"A": null}', "variable name")):
+            with self.subTest(body):
+                path = self.dir / "bad.json"
+                path.write_text(body, encoding="utf-8")
+                self.assertIn(want, self.fails("fill", "-t", "Access", "--dry-run", "--vars", str(path)))
+
+    def test_a_terminal_is_asked_for_each_missing_value_and_wrong_answers_are_asked_again(self):
+        answers = iter(["", "Payroll", "web", "nonsense?", "ip", "web?", "web-servers", "jump-hosts", "y"])
+        shown = []
+        self.interactive = True
+        with mock.patch("builtins.input", side_effect=lambda prompt: (shown.append(prompt), next(answers))[1]):
+            code, out, err = self.run_cli("fill", "-t", "Access", "--dry-run", "--json", "--var", "SRC_ADDR=jump-hosts")
+        # --json is never interactive: it must fail the old way, not ask
+        self.assertEqual(code, 1)
+        self.assertEqual(shown, [])
+        shown.clear()
+        answers = iter(["", "Payroll", "web", "jump-hosts", "y"])
+        with mock.patch("builtins.input", side_effect=lambda prompt: (shown.append(prompt), next(answers))[1]):
+            code, out, err = self.run_cli("fill", "-t", "Access", "--dry-run", "--var", "SRC_ADDR=web-servers")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(shown[0], "System Name (Text): ")
+        self.assertEqual(shown[1], "System Name (Text): ", "an empty answer is asked for again")
+        self.assertIn("System Name needs a value.", out)
+        self.assertIn("Destination (An entry from ip_library_12): ", shown)
+        self.assertIn("Urgent (Checked or not) [y/N]: ", shown)
+        self.assertIn("isn't in the library ip_library_12. Did you mean: web-servers", out, "a miss names close matches")
+        self.assertIn("Payroll", out)
+        self.assertIn("10.40.0.9", out)
+        self.assertNotIn("SRC_ADDR", "".join(shown), "a value already given isn't asked for")
+
+    def test_a_question_mark_lists_a_librarys_matches(self):
+        answers = iter(["Payroll", "db?", "zzz?", "web-servers", "jump-hosts", ""])
+        self.interactive = True
+        with mock.patch("builtins.input", side_effect=lambda prompt: next(answers)):
+            code, out, err = self.run_cli("fill", "-t", "Access", "--dry-run")
+        self.assertEqual(code, 0, err)
+        self.assertIn("  db-servers  - Payroll DB", out)
+        self.assertIn("  Nothing matches.", out)
+
+    def test_input_that_ends_names_the_variable_and_the_flag(self):
+        self.interactive = True
+        with mock.patch("builtins.input", side_effect=EOFError):
+            err = self.fails("fill", "-t", "Access", "--dry-run")
+        self.assertIn("No answer for System Name (input ended)", err)
+        self.assertIn('--var "SYSTEM_NAME=..."', err)
+
+    def test_a_script_still_gets_the_error_not_a_prompt(self):
+        with mock.patch("builtins.input", side_effect=AssertionError("must not ask")):
+            err = self.fails("fill", "-t", "Access", "--dry-run")
+        self.assertIn('--var "SYSTEM_NAME=..."', err)
+
+
+class GuideTests(LibraryCase):
+    """The authors' and publishers' guides (docs/heimdall-*.md) are tested against the code, so an example
+    can't drift from what Heimdall does."""
+
+    DOCS = ROOT / "docs"
+
+    def example(self, doc, name):
+        text = (self.DOCS / doc).read_text(encoding="utf-8")
+        start = text.index(f"<!-- example: {name} -->")
+        block = text[text.index("```", start):]
+        return block.split("\n", 1)[1].split("```", 1)[0].strip()
+
+    def test_the_library_example_imports_and_searches(self):
+        path = self.dir / "guide-library.json"
+        path.write_text(self.example("heimdall-libraries.md", "library"), encoding="utf-8")
+        self.assertIn("Imported the library ip_library_12: 3 entries, version 2026-10-01.", self.ok("library", "import",
+                                                                                                    str(path)))
+        shown = json.loads(self.ok("library", "search", "ip_library_12", "web", "--json"))
+        self.assertEqual([m["name"] for m in shown["matches"]], ["web-servers"])
+        lib = libs.Store().load("ip_library_12")
+        self.assertEqual(lib.find("db-servers").value, "10.30.0.5, 10.30.0.6", "a list joins with a comma")
+
+    def test_the_template_example_checks_and_fills_in_as_the_guide_says(self):
+        path = self.dir / "guide-library.json"
+        path.write_text(self.example("heimdall-libraries.md", "library"), encoding="utf-8")
+        self.ok("library", "import", str(path))
+        self.ok("template", "save", "Firewall access", "--set",
+                "Short description=" + self.example("heimdall-templates.md", "template"),
+                "--set", "Requested for={DEST_ADDR}")
+        self.assertIn('"Firewall access" is ready.', self.ok("template", "check", "Firewall access"))
+        body = json.loads(self.ok("fill", "-t", "Firewall access", "--dry-run", "--json", "--var", "SYSTEM_NAME=Payroll",
+                                  "--var", "SRC_ADDR=web-servers", "--var", "DEST_ADDR=jump-hosts",
+                                  "--var", "URGENT=true"))
+        fields = {f["label"]: f["value"] for f in body["fields"]}
+        self.assertRegex(fields["Short description"], r"^We need access to Payroll from 10\.20\.0\.0/24 to "
+                                                       r"10\.40\.0\.9\. Urgent: Yes \(\d{4}-\d\d-\d\d\)$")
+        self.assertEqual(fields["Requested for"], "10.40.0.9")
+
+    def test_every_mistake_in_the_table_gets_the_message_the_guide_shows(self):
+        text = (self.DOCS / "heimdall-templates.md").read_text(encoding="utf-8")
+        table = text.split("## Mistakes the parser reports", 1)[1].split("At fill time:", 1)[0]
+        rows = [r for r in table.splitlines() if r.startswith("| `")]
+        self.assertGreaterEqual(len(rows), 12)
+        for row in rows:
+            wrote, says = [c.strip() for c in row.strip("|").split("|")][:2]
+            written = wrote.replace("` and `", " ").replace(" with no definition anywhere", "").strip("`")
+            with self.subTest(written):
+                with self.assertRaises(v.VariableError) as cm:
+                    v.collect([("Short description", written)])
+                for part in says.strip("`").split(" ... "):
+                    self.assertIn(part, str(cm.exception))
+
+    def test_the_wording_of_the_fill_time_messages(self):
+        self.ok("library", "import", str(self.publish()))
+        self.ok("template", "save", "T", "--set", "Short description={HOST:TEXTBOX('ip_v4'):'Host'} {S:LIBRARY('ip_library_12'):'Source'}")
+        err = self.fails("fill", "-t", "T", "--dry-run", "--var", "HOST=y", "--var", "S=web-servers")
+        self.assertIn("Host must be an IPv4 address; 'y' isn't.", err)
+        err = self.fails("fill", "-t", "T", "--dry-run", "--var", "HOST=10.1.1.1", "--var", "S=web")
+        self.assertIn('"web" isn\'t in the library ip_library_12. Did you mean: web-servers', err)
+
+    def test_variables_work_in_the_field_kinds_the_guide_names(self):
+        self.ok("template", "save", "Kinds", "--set", "Short description={A:TEXTBOX}",
+                "--set", "Requested for={B:TEXTBOX}", "--set", "Category={C:DROPDOWN('Software','Hardware')}")
+        err = self.fails("template", "save", "Box", "--set", "I confirm={D:TEXTBOX}")
+        self.assertIn('"I confirm" is a checkbox: use true or false', err)
 
 
 def forms_path():

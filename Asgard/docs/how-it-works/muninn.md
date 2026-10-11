@@ -140,7 +140,7 @@ The schema is a numbered series of SQL files in `asgard/muninn/migrations/`, and
 - keeps a daily backup (7 kept), made with `VACUUM INTO`, so the copy is consistent and compact while other apps keep reading;
 - runs housekeeping: refreshes the query planner's statistics, folds the write-ahead log back into the file, deletes half-written backups a crash left, and prunes old rows if retention is switched on (off by default, because how long records are kept is the records officer's call).
 
-`Asgard.pyw --muninn status | check | repair | backup | restore | maintain` does the same by hand. [muninn-operations.md](../../../docs/muninn-operations.md) says what each message means and what to do.
+`asgard muninn status | check | repair | backup | restore | maintain` does the same by hand. [muninn-operations.md](../../../docs/muninn-operations.md) says what each message means and what to do.
 
 ## Keeping secrets out
 

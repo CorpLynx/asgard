@@ -1700,7 +1700,7 @@ class CliTests(MuninnCase):
     def test_collect_needs_setup_first(self):
         code, _, err = self.cli("collect")
         self.assertEqual(code, 1)
-        self.assertIn("cli.py setup --root", err)
+        self.assertIn("asgard baldur setup --root", err)
         code, out, _ = self.cli("setup")
         self.assertIn("Still to do:", out)
 

@@ -21,7 +21,7 @@ from mcp.types import ToolAnnotations
 
 from asgard import __version__
 
-from . import SCHEMA, baldur_tools, muninn_tools, reader, results, teach
+from . import SCHEMA, baldur_tools, heimdall_tools, muninn_tools, reader, results, teach
 from . import config as switches
 
 
@@ -94,6 +94,28 @@ TOOLS = (
          "Search the person's Jira issues, their own commits and their pull requests by words, best matches first. "
          "Returns each hit's kind, id, ref (key, SHA or repo#number), title and time. Each word is matched as "
          "written. Changes nothing.", read_only=True, idempotent=True),
+    Tool("heimdall_templates", heimdall_tools.heimdall_templates, "Heimdall templates",
+         "List the person's Heimdall templates (saved security change submissions): each one's name, description, "
+         "and the variables it asks for when it is filled in, with whether it can be filled as it is. Returns no "
+         "field values. Changes nothing.", read_only=True, idempotent=True),
+    Tool("heimdall_template_variables", heimdall_tools.heimdall_template_variables, "What a Heimdall template asks for",
+         "One Heimdall template's variables: each one's name, label, kind (textbox, checkbox, dropdown or library), "
+         "what a textbox accepts, a dropdown's options and the library a library variable picks from. Use the names "
+         "as the keys of heimdall_plan's variables. Changes nothing.", read_only=True, idempotent=True),
+    Tool("heimdall_library_list", heimdall_tools.heimdall_library_list, "Heimdall libraries",
+         "List the libraries the person imported into Heimdall (named lists, such as address groups): name, "
+         "description, how many entries, version. Never the entries or their values. Changes nothing.",
+         read_only=True, idempotent=True),
+    Tool("heimdall_library_search", heimdall_tools.heimdall_library_search, "Search a Heimdall library",
+         "Search one Heimdall library for entries whose name or description holds your words. Returns entry names "
+         "and descriptions only, never values; give the name of the entry as a library variable's value in "
+         "heimdall_plan. Changes nothing.", read_only=True, idempotent=True),
+    Tool("heimdall_plan", heimdall_tools.heimdall_plan, "Plan a Heimdall fill",
+         "Show what filling a Heimdall template would type into each field, for the variable values you give, "
+         "without opening a browser or filling anything. A library pick is shown as the entry's name, never its "
+         "value. Refuses with Heimdall's own message when a value is missing or wrong; show the person that "
+         "message. The person runs the fill and clicks Submit themselves. Changes nothing.",
+         read_only=True, idempotent=True),
 )
 
 
@@ -125,7 +147,7 @@ def serve() -> None:
 
 
 def check(config: Optional[switches.Config] = None) -> List[str]:
-    """What `ysildir.cmd check` prints: the server as an agent sees it, through the SDK's own client in memory."""
+    """What `asgard ysildir check` prints: the server as an agent sees it, through the SDK's own client in memory."""
     from mcp import Client
 
     config = config or switches.load()

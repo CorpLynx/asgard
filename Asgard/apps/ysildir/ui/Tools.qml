@@ -70,7 +70,7 @@ ScrollPage {
         title: page.sdk.ready ? "The MCP SDK is installed" : "The MCP SDK isn't installed"
         subtitle: page.sdk.ready
                   ? "An AI client can start Ysildir with this Python."
-                  : "Agents can still record estimates with baldur.cmd ai record and the clipboard review."
+                  : "Agents can still record estimates with asgard baldur ai record and the clipboard review."
         accentColor: page.sdk.ready ? theme.success : theme.warning
         RowLayout {
             spacing: 10
@@ -122,7 +122,7 @@ ScrollPage {
         subtitle: page.writable
                   ? "What each tool sends to your AI client is what your ISSO approves. Restart the server in "
                     + "your client after a change."
-                  : "Read-only on this Python: switching tools needs the SDK's pydantic. Use ysildir.cmd tools --on NAME."
+                  : "Read-only on this Python: switching tools needs the SDK's pydantic. Use asgard ysildir tools --on NAME."
         Repeater {
             model: page.rows
             delegate: Rectangle {

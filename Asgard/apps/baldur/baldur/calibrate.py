@@ -200,7 +200,7 @@ def fit(con: sqlite3.Connection, settings: Settings, first: Optional[dt.date] = 
     totals = {day: figures[None] for day, figures in noted.items() if None in figures}
     if not totals:
         raise CalibrationError("No real hours noted yet. Note each day's development time first: "
-                               "cli.py actual DATE TIME")
+                               "asgard baldur actual DATE TIME")
     current = Dials.of(settings)
     base = E.Params.from_settings(settings)
     grid = [Dials(g, ld, w) for g, ld, w in itertools.product(
@@ -214,7 +214,7 @@ def fit(con: sqlite3.Connection, settings: Settings, first: Optional[dt.date] = 
     left_out = sorted(day for day in totals if day not in worked)
     if not actual:
         raise CalibrationError("Baldur has no commits of yours on the days you noted, so there's nothing to "
-                               "calibrate yet. Run cli.py collect, or note days you committed on.")
+                               "calibrate yet. Run asgard baldur collect, or note days you committed on.")
     renamed = store.current_keys(con)
     noted_tickets = {(day, renamed.get(k, k)): m for day, figures in noted.items() if day in actual
                      for k, m in figures.items() if k is not None}
@@ -235,7 +235,7 @@ def fit(con: sqlite3.Connection, settings: Settings, first: Optional[dt.date] = 
     actual = {day: actual[day] for day in days}
     if not days:
         raise CalibrationError("Every day you noted comes out the same under every setting, so they can't tell the "
-                               "settings apart. Note days with ordinary commits: cli.py actual DATE TIME")
+                               "settings apart. Note days with ordinary commits: asgard baldur actual DATE TIME")
     noted_tickets = {k: m for k, m in noted_tickets.items() if k[0] in actual}
 
     def score(d: Dials) -> Score:
@@ -275,10 +275,10 @@ def accept(con: sqlite3.Connection, settings: Settings, result: Fit) -> int:
     """
     if not result.enough:
         raise CalibrationError(f"Calibration needs real hours for at least {MIN_DAYS} days with commits; you have "
-                               f"{len(result.actual)}. Keep noting them: cli.py actual DATE TIME")
+                               f"{len(result.actual)}. Keep noting them: asgard baldur actual DATE TIME")
     if result.best is None:
         raise CalibrationError("No setting in the search estimates low on average against your notes, so none can "
-                               "be accepted. Check the hours you noted (cli.py actuals).")
+                               "be accepted. Check the hours you noted (asgard baldur actuals).")
     if not result.changes:
         raise CalibrationError("Your current settings already fit best; there's nothing to change.")
     if settings.broken:

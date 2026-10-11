@@ -16,7 +16,7 @@ This folder keeps what isn't part of Asgard:
 | --- | --- |
 | `graph-app/` | Path D: the calendar from Microsoft Graph (`msal`), for when COM isn't allowed. Hands its export to Asgard's `odin.cmd` |
 | `playwright-app/` | Path C, contingency only: the calendar from OWA through a browser. Hands off the same way |
-| `power-platform/` | Power Automate desktop and Power BI material (`power-bi/report.ps1` wraps `odin report`) |
+| `power-platform/` | Power Automate desktop and Power BI material (`power-bi/report.ps1` wraps `asgard odin report`) |
 | `README.md`, `INSTALL.md`, `ARCHITECTURE.md`, `MODULES.md`, `HANDOFF.md` | This page and its companions; `HANDOFF.md` is the history of Odin before it moved |
 
 ## Design notes
@@ -99,7 +99,7 @@ The config file is `%LOCALAPPDATA%\Asgard\odin\config.json`. It's JSON, and any 
 |---|---|---|
 | `sync_issues` | `true` | Your issues, the parents your meetings go under and their children, and keys Asgard's other apps mention, read into Muninn. |
 | `sync_worklogs` | `true` | Your worklogs, read into Muninn, so Baldur sees what Jira already holds. |
-| `post_approved` | `true` | Post the days you approved in Baldur that Jira is missing. Only approved minutes, only after that run's worklog sync, at most `max_posts_per_run`. `odin post` posts whatever this says. |
+| `post_approved` | `true` | Post the days you approved in Baldur that Jira is missing. Only approved minutes, only after that run's worklog sync, at most `max_posts_per_run`. `asgard odin post` posts whatever this says. |
 | `max_posts_per_run` | `20` | |
 | `history_days` | `365` | How far back the first sync reaches. |
 | `max_issues_per_run` | `500` | Per stream. A bigger first sync carries on next run. |
@@ -116,7 +116,7 @@ The config file is `%LOCALAPPDATA%\Asgard\odin\config.json`. It's JSON, and any 
 
 The `*_contains` lists match **anywhere in the text, including inside words**, so `"PTO"` also matches `OPTOMETRIST`. When that matters use a regex instead: `"skip_subject_patterns": ["(?i)\\bPTO\\b"]`. A bare string where a list belongs is rejected at load time, because `"OOO"` would otherwise be read as the three substrings `O`, `O`, `O` and skip nearly everything.
 
-Filters are evaluated cheapest-first, so a meeting that is both declined and contains `OOO` reports `declined`. Run `odin preview` to see the exact reason for each skip; the message names the string that matched.
+Filters are evaluated cheapest-first, so a meeting that is both declined and contains `OOO` reports `declined`. Run `asgard odin preview` to see the exact reason for each skip; the message names the string that matched.
 
 **`tour_of_duty`**: your scheduled working hours, in local wall-clock time. Off by default.
 

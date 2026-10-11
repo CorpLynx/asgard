@@ -732,12 +732,12 @@ def prepare(path: Optional[PathLike] = None, *, backups: Optional[Path] = None,
                 status.warnings.append(f"Muninn put back {len(done)} of its protections that were missing or "
                                        f"altered ({'; '.join(done[:3])}{'; ...' if len(done) > 3 else ''}).")
             for f in failed:
-                status.warnings.append(f"Muninn's schema needs a restore: {f}. Run: Asgard.pyw --muninn check")
+                status.warnings.append(f"Muninn's schema needs a restore: {f}. Run: asgard muninn check")
         broken = con.execute("PRAGMA foreign_key_check").fetchall()
         if broken:
             tables = sorted({r[0] for r in broken})
             status.warnings.append(f"{len(broken)} rows in {', '.join(tables)} point at rows that are gone. "
-                                   "Run: Asgard.pyw --muninn check")
+                                   "Run: asgard muninn check")
         # A run still 'running' after six hours belongs to an app that stopped mid-run.
         try:
             retry_busy(lambda: con.execute(

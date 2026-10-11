@@ -4,7 +4,7 @@ connect an AI client.
 Ysildir is an MCP server, so there is nothing to "open": the page exists to answer three questions.
 Is the SDK installed? Which tools may an AI client use, and what does each send? How do I connect a
 client? Switching a tool on or off is the person's decision (and the ISSO's), so the page does it and
-an agent can't: Kiro's guard hook blocks `ysildir.cmd tools --on`.
+an agent can't: Kiro's guard hook blocks `asgard ysildir tools --on`.
 
 It stays useful on a Python without the MCP SDK, which is when it matters most: the switch list comes
 from ysildir.switches (standard library), and only reading or writing the file needs pydantic. Without
@@ -85,7 +85,7 @@ class Backend:
             from . import config
         except ImportError:
             return {"error": "Switching tools needs the MCP SDK's pydantic on this Python. Until then use: "
-                             "ysildir.cmd tools --on NAME"}
+                             "asgard ysildir tools --on NAME"}
         from . import Refused
         try:
             config.switch([name], bool(on))
@@ -95,7 +95,7 @@ class Backend:
 
     # ---- connecting a client ----------------------------------------------
     def clients(self) -> List[Dict[str, str]]:
-        """The `ysildir.cmd setup` command for each client, to copy and run in a workspace folder."""
+        """The `asgard ysildir setup` command for each client, to copy and run in a workspace folder."""
         return [{"id": cid, "name": name,
                  "command": f'python "{_cli()}" setup --{cid} <workspace folder>'} for cid, name in CLIENTS]
 

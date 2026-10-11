@@ -10,7 +10,7 @@ Asgard calls muninn.prepare() when it starts, which creates the database,
 applies migrations, checks the file and keeps a daily backup. Apps outside
 Asgard (Odin) import this package from Asgard's install folder; see README.md.
 The connection open_app() returns refuses writes to tables the app doesn't
-own (guard.py). `Asgard.pyw --muninn check|repair|backup|restore` looks after
+own (guard.py). `asgard muninn check|repair|backup|restore` looks after
 the file by hand (cli.py, docs/muninn-operations.md).
 """
 from .db import (BusyError, CorruptError, MuninnError, NotReady, Status, VersionError, ago, available_migrations,

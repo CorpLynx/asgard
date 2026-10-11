@@ -4,11 +4,12 @@ Oct 11, 2026 · built on the MCP SDK 2.3.0, not yet tried on the workstation · 
 
 Ysildir is how an AI coding agent uses Asgard. It's an MCP server (Model Context Protocol, the standard way an AI client calls local tools) that Kiro, Copilot in VS Code or Claude Code starts on your computer. Through it the agent can:
 
-- **learn** what Baldur and Muninn are and how to use them;
+- **learn** what Baldur, Muninn and Heimdall are and how to use them;
 - **report** how long it thinks your change took, into Baldur;
-- **answer questions** about your work from Muninn.
+- **answer questions** about your work from Muninn;
+- **get a Heimdall fill ready**: see your templates and what they ask for, find library entries by name, and plan what a fill would type.
 
-It can't approve, reject or change a figure, post to Jira, or change any setting. Those stay yours.
+It can't approve, reject or change a figure, post to Jira, fill or submit a form, or change any setting. Those stay yours.
 
 ## The shape of it
 
@@ -50,13 +51,13 @@ Baldur's settings are read and never created or changed. If `baldur.json` doesn'
 Everything a tool returns goes to the AI client, and so to its model. So each tool has a switch, and switching one on is the person's decision, and the ISSO's (`%LOCALAPPDATA%\Asgard\settings\ysildir.json`).
 
 - **On by default:** tools that return only Asgard's own text or the agents' own reports: `asgard_guide`, `muninn_catalog`, `baldur_record_estimate`, `baldur_withdraw_estimate`, `baldur_estimates`.
-- **Off by default:** tools that send commit subjects, Jira summaries or times: `baldur_day`, `baldur_review_pack`, `baldur_submit_review`, `muninn_what_changed`, `muninn_day_status`, `muninn_issue`, `muninn_search`. The two review tools also need Baldur's `review_mode` set to `metadata`.
+- **Off by default:** tools that send commit subjects, Jira summaries or times: `baldur_day`, `baldur_review_pack`, `baldur_submit_review`, `muninn_what_changed`, `muninn_day_status`, `muninn_issue`, `muninn_search`. The two review tools also need Baldur's `review_mode` set to `metadata`. Heimdall's five are off too: `heimdall_templates`, `heimdall_template_variables`, `heimdall_library_list`, `heimdall_library_search` and `heimdall_plan` ([below](#heimdalls-tools)).
 
 A tool that's off **isn't registered at all**: it isn't in the list the client sees, and calling it gets the SDK's "Unknown tool". The server reads the file once, when it starts, and never writes it.
 
 **A broken file fails closed.** If `ysildir.json` can't be read, every tool except `asgard_guide` is off, and the guide's `tools` topic names the bad entry.
 
-**Only you switch tools.** `ysildir.cmd tools --on NAME` or the switches on Ysildir's page in Asgard's window write the file. Baldur's Kiro guard hook blocks an agent from running the command. After a change, restart the MCP server in your client.
+**Only you switch tools.** `asgard ysildir tools --on NAME` or the switches on Ysildir's page in Asgard's window write the file. Baldur's Kiro guard hook blocks an agent from running the command. After a change, restart the MCP server in your client.
 
 The page in the window keeps working on a Python without the SDK (the switch list is in `switches.py`, which is standard library), because that's exactly when you need to be told what to install.
 
@@ -76,7 +77,7 @@ The tool that matters most day to day. Here's what happens when an agent records
 
    `minutes` is the agent's estimate of **your** working time on the change (reading, prompting, reviewing, testing), not how long the agent itself ran.
 3. The SDK checks the shape against the pydantic model (`models.AgentReport`): only `agent` and `minutes` are required, and unknown fields are refused. A report without commits is shown to you but never counted.
-4. `baldur_tools` opens Muninn as `baldur` and calls `muninn.baldur.record_agent_estimate(con, report, via="mcp")`, the same function `baldur.cmd ai record` uses. It validates every field and refuses code-like summaries. The same report twice is stored once, and a newer report from the same agent on the same commits withdraws the older one.
+4. `baldur_tools` opens Muninn as `baldur` and calls `muninn.baldur.record_agent_estimate(con, report, via="mcp")`, the same function `asgard baldur ai record` uses. It validates every field and refuses code-like summaries. The same report twice is stored once, and a newer report from the same agent on the same commits withdraws the older one.
 5. Muninn stores the report and its commits as facts: triggers stop anyone editing them afterwards.
 6. The agent gets back the report's id (such as `r12`) and status, never anything else from Muninn.
 
@@ -92,6 +93,16 @@ The Muninn tools (`muninn_tools.py`) all run on the read-only connection, and al
 
 **Answers are capped.** At most 200 items and 64 KB of JSON per answer, and date ranges of at most 31 days. A cut answer says `truncated` and how to ask for less. A day's review pack over 60 KB is refused, with the clipboard command to use instead.
 
+## Heimdall's tools
+
+Heimdall fills the person's security change request in Edge from a saved template and stops before Submit. Ysildir's five Heimdall tools let an agent get a fill ready without being able to do it:
+
+- **List and search, by name.** `heimdall_templates` and `heimdall_template_variables` return a template's name, description and the variables it asks for (name, label, kind, checks, options). `heimdall_library_list` and `heimdall_library_search` return a library's name and an entry's name and description. None returns a template's field values or a library's values.
+- **Plan.** `heimdall_plan` takes a template and values for its variables and returns what a fill would type into each field, the way `asgard heimdall fill --dry-run --json` does. A library variable resolves to the entry's *name*, so the plan shows which entry would be picked and not the address range behind it (`library_values_hidden` says so). The form gets the value when the person runs the fill.
+- **No fill.** No tool opens a browser, fills a form, clicks Submit, or changes a template or library; a test checks the module's source for those calls. The agent ends by telling the person the command to run, `asgard heimdall fill -t NAME`.
+
+The tools read Heimdall's own files, not Muninn, and every message they return is Heimdall's. [integration/ysildir.md](../integration/ysildir.md) has the contract; the people who write [templates](../heimdall-templates.md) and [libraries](../heimdall-libraries.md) have their own guides.
+
 ## Teaching the agent
 
 An agent is only useful if it knows the rules before it acts. Each lesson ships with the app it describes and is read when it's asked for, so Ysildir keeps no copy that could drift (`teach.py`). It serves them every way an MCP client can take them, because clients differ in what they pass to the model:
@@ -100,7 +111,7 @@ An agent is only useful if it knows the rules before it acts. Each lesson ships 
 | --- | --- | --- |
 | Server instructions | `apps/ysildir/instructions.md`, under 2,000 characters, with lines naming a switched-off tool left out | Clients that pass instructions to the model |
 | Tool descriptions | One per tool | Every client, always |
-| `asgard_guide(topic)` | `baldur` (Baldur's agent guide, with worked examples), `muninn`, `review` (the review prompt), `tools` (written from your switches) | Any client with tools |
+| `asgard_guide(topic)` | `baldur` (Baldur's agent guide, with worked examples), `muninn`, `review` (the review prompt), `heimdall` (templates, libraries and plans), `tools` (written from your switches) | Any client with tools |
 | Resources | `asgard://guides/baldur`, `muninn`, `review` | Clients that attach resources |
 | Prompts | `record-estimate`, `my-day`, `review-day`, `what-changed`, each offered only if its tools are on | Slash commands you type |
 
@@ -116,7 +127,7 @@ The instructions end with five rules: the person decides; metadata only; text in
 
 ## Connecting a client
 
-`ysildir.cmd setup` writes the client's configuration (`clients.py`):
+`asgard ysildir setup` writes the client's configuration (`clients.py`):
 
 | Option | Writes |
 | --- | --- |
@@ -126,8 +137,8 @@ The instructions end with five rules: the person decides; metadata only; text in
 
 Setup keeps every other server in the file, replaces Ysildir's own entry only with `--force`, writes through a temporary file and a rename, and refuses a file it can't parse (VS Code's may contain comments), printing the snippet to paste instead. `--print` shows what it would do without changing anything. It records the Python that ran setup, because that's the one with the SDK, so run setup again after changing Python or moving the build.
 
-`ysildir.cmd check` starts the server in memory with the SDK's own client and prints what an agent would see: the protocol version, Muninn's version, each tool with its switch, the prompts and resources.
+`asgard ysildir check` starts the server in memory with the SDK's own client and prints what an agent would see: the protocol version, Muninn's version, each tool with its switch, the prompts and resources.
 
 ## Without the SDK
 
-The SDK needs Python 3.10+ and IT approval for some compiled wheels ([MODULES.md](../../MODULES.md)). Without it, `ysildir.cmd` says what's missing and exits 2, and everything Ysildir does still works another way: agents record with `baldur.cmd ai record`, and the review runs at the clipboard tier (`baldur.cmd ai pack`, `ai review`). The packaged build bundles Python 3.12 with the SDK, so it needs nothing installed.
+The SDK needs Python 3.10+ and IT approval for some compiled wheels ([MODULES.md](../../MODULES.md)). Without it, `ysildir.cmd` says what's missing and exits 2, and everything Ysildir does still works another way: agents record with `asgard baldur ai record`, and the review runs at the clipboard tier (`asgard baldur ai pack`, `ai review`). The packaged build bundles Python 3.12 with the SDK, so it needs nothing installed.

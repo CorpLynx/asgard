@@ -5,9 +5,9 @@ FormError or TemplateError (both ValueError), which the window shows as a messag
 
 Rules it keeps:
 - Same files and the same rules as the command line: it calls form.py and templates.py, never
-  its own copy of them, so the window and `heimdall template ...` can't disagree.
+  its own copy of them, so the window and `asgard heimdall template ...` can't disagree.
 - fill runs the command line in a child process (fill_command), so Playwright and Edge never
-  load into the window, and a fill behaves exactly as `heimdall fill -t NAME` does.
+  load into the window, and a fill behaves exactly as `asgard heimdall fill -t NAME` does.
 - It checks the plan before handing over the command, so a missing attachment or required
   field is reported in the window instead of after Edge opens.
 - Template variables travel to the fill as --var NAME=VALUE. A library pick travels as the

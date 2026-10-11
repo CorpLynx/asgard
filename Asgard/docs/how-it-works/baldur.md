@@ -21,8 +21,8 @@ The window (`apps/baldur/ui/*.qml` over `ui_backend.py`), the CLI (`cli.py`, run
 
 Baldur refuses to collect or estimate until it knows two things (`collect.check_ready`):
 
-- **Your git emails**, stored as Muninn identities (`baldur.cmd setup --email you@agency.gov`). A commit is yours only when it was authored with one of them. Names don't count, because two people can share one.
-- **Which Jira projects count** (`project_keys` in `baldur.json`, such as `["PROJ", "OPS"]`; `baldur.cmd setup --project PROJ`). A key is `PROJECT-123` whose project is in that list, so `UTF-8`, `SHA-256` and `ISO-8601` are never mistaken for tickets.
+- **Your git emails**, stored as Muninn identities (`asgard baldur setup --email you@agency.gov`). A commit is yours only when it was authored with one of them. Names don't count, because two people can share one.
+- **Which Jira projects count** (`project_keys` in `baldur.json`, such as `["PROJ", "OPS"]`; `asgard baldur setup --project PROJ`). A key is `PROJECT-123` whose project is in that list, so `UTF-8`, `SHA-256` and `ISO-8601` are never mistaken for tickets.
 
 ## 1. Collecting
 
@@ -43,7 +43,7 @@ It reads, with the `git` command line (`gitread.py`):
 2. **branch**: the smallest branch that contains the commit and the default branch doesn't (stacked branches contain the ones under them, so the smallest is the most specific);
 3. **pr**: the head branch of your pull request that holds the commit (when GitHub is on);
 4. **message**: keys in the commit message;
-5. **manual**: keys you set with `baldur.cmd keys`, which nothing ever overrides.
+5. **manual**: keys you set with `asgard baldur keys`, which nothing ever overrides.
 
 Weaker evidence never replaces stronger.
 
@@ -52,7 +52,7 @@ A few things are handled specially:
 - **Worktrees.** A linked worktree is the same repository as the folder it was added from, so its commits are stored once.
 - **Squash copies.** When GitHub squash-merges your pull request, or you `git merge --squash` commits already collected, the copy is stored with `is_merge = 1` and no keys. It's never counted as work. It only ties together the sessions it copies, so they share one session's length limit rather than counting twice.
 - **Late commits.** Each collection re-reads `history_days` (default 120) of history, because commits can arrive late from another machine or a rebase.
-- **Reflog expiry.** Git expires reflog entries after 90 days, so `baldur.cmd schedule` sets up a weekly scheduled task to collect.
+- **Reflog expiry.** Git expires reflog entries after 90 days, so `asgard baldur schedule` sets up a weekly scheduled task to collect.
 
 **GitHub** is optional (`github.py`) and read-only: Baldur never comments, approves or merges. With a token in Windows Credential Manager it syncs your pull requests, their reviews, and the reviews requested of you. Every list request is conditional on the last ETag, so an unchanged repository costs one request and nothing else.
 
@@ -95,7 +95,7 @@ The hash is what keeps your review list quiet. Re-estimating a day **stores noth
 
 Each run's settings are copied into `estimate_runs.params`, so changing a setting never changes past numbers.
 
-**What you see is always fresh.** The window and `baldur.cmd report` run `store.compute()`, which estimates over Muninn as it is now without writing anything. Approving a day stores that estimate first (writing only what's new), then approves it.
+**What you see is always fresh.** The window and `asgard baldur report` run `store.compute()`, which estimates over Muninn as it is now without writing anything. Approving a day stores that estimate first (writing only what's new), then approves it.
 
 ## 4. Approving
 
@@ -120,7 +120,7 @@ Baldur has two ways to estimate, side by side. The manual engine above uses only
 An AI-assisted figure comes from one of two places, best first:
 
 1. **A checked AI review.** You (or an agent through Ysildir) send the day's evidence to an approved AI chat, and its JSON answer adjusts the day. This is used while the evidence it saw is still the day's evidence.
-2. **Agent estimates.** A coding agent that worked a change with you recorded what it thinks *your* time on that change was (`baldur.cmd ai record`, or Ysildir's `baldur_record_estimate`). Baldur turns these reports into adjustments **in code, with no AI call**.
+2. **Agent estimates.** A coding agent that worked a change with you recorded what it thinks *your* time on that change was (`asgard baldur ai record`, or Ysildir's `baldur_record_estimate`). Baldur turns these reports into adjustments **in code, with no AI call**.
 
 ### From agent reports to adjustments
 
@@ -143,13 +143,13 @@ Every suggestion, from an agent or from a review, goes through `muninn.baldur.ch
 
 ### Taking the figures
 
-The day page shows the AI-assisted figures with a short id: a digest of exactly those figures. Approving with `baldur.cmd approve --date 2026-10-01 --ai 3f2a9c1d` takes them **only if they're still the figures you saw**. If a new report has arrived since and changed them, the approval is refused and you look again. The approval records which figure you took, and Odin adds a `Reviewed:` line to the worklog comment.
+The day page shows the AI-assisted figures with a short id: a digest of exactly those figures. Approving with `asgard baldur approve --date 2026-10-01 --ai 3f2a9c1d` takes them **only if they're still the figures you saw**. If a new report has arrived since and changed them, the approval is refused and you look again. The approval records which figure you took, and Odin adds a `Reviewed:` line to the worklog comment.
 
 ### Where an AI review can run
 
 | Tier | How | Status |
 | --- | --- | --- |
-| Clipboard | `baldur.cmd ai pack DATE` copies the prompt and the day's evidence; you paste it into an approved AI chat and give the JSON answer to `baldur.cmd ai review DATE ANSWER.json` | Works |
+| Clipboard | `asgard baldur ai pack DATE` copies the prompt and the day's evidence; you paste it into an approved AI chat and give the JSON answer to `asgard baldur ai review DATE ANSWER.json` | Works |
 | MCP | An agent calls Ysildir's `baldur_review_pack` and `baldur_submit_review` | Built, off by default |
 | API | Mímir picks a model and calls it | Not built |
 
@@ -157,7 +157,7 @@ The pack holds commit subjects, times, line counts and keys, never code. `review
 
 ### Agents in your workspace
 
-`baldur.cmd ai kiro --into C:\src\my-service` puts two things into a Kiro workspace (`apps/baldur/agents/`):
+`asgard baldur ai kiro --into C:\src\my-service` puts two things into a Kiro workspace (`apps/baldur/agents/`):
 
 - a **steering file** that teaches the agent when and how to record an estimate;
 - two **hooks**. An after-commit hook reminds the agent to record. A guard hook blocks the agent from running anything that's your decision: `approve`, `reject`, `change`, `actual`, `calibrate --accept`, settings, keys and repositories, the GitHub token, Ysildir's switches, and anything that touches `muninn.db`, `baldur.json` or `ysildir.json`.
@@ -166,15 +166,15 @@ The pack holds commit subjects, times, line counts and keys, never code. `review
 
 The defaults are guesses. Calibration measures them against what really happened (`calibrate.py`):
 
-1. You note your real development time for some days: `baldur.cmd actual 2026-10-01 5h30m`. These go in `time_actuals`. Baldur never fits to its own numbers or to your approvals, because an approval usually starts from the estimate and would only confirm it.
-2. `baldur.cmd calibrate` tries a grid of 270 settings over the three dials the spec names: idle gap (60–180 m), lead-in (0–60 m) and the ambient weight (0.3–0.8). Your current values are always tried too.
+1. You note your real development time for some days: `asgard baldur actual 2026-10-01 5h30m`. These go in `time_actuals`. Baldur never fits to its own numbers or to your approvals, because an approval usually starts from the estimate and would only confirm it.
+2. `asgard baldur calibrate` tries a grid of 270 settings over the three dials the spec names: idle gap (60–180 m), lead-in (0–60 m) and the ambient weight (0.3–0.8). Your current values are always tried too.
 3. Only settings that estimate **low on average** may win. Among them, the lowest mean absolute daily error wins. Ties go to the lower estimate, then to the value you already have.
 4. Days that can't teach the dials anything are listed and left out: work Baldur can't see, or a day that estimates the same under every setting.
-5. `baldur.cmd calibrate --accept` (after at least 10 noted days) writes the new settings and records the calibration. Past estimate runs keep the settings they used.
+5. `asgard baldur calibrate --accept` (after at least 10 noted days) writes the new settings and records the calibration. Past estimate runs keep the settings they used.
 
 ## Settings
 
-`%LOCALAPPDATA%\Asgard\settings\baldur.json`, created with the defaults on first use and editable on the Settings page or with `baldur.cmd setup`. A file that won't parse stops every command until it's fixed or deleted: quietly falling back to the defaults could store higher numbers than the ones you chose. Writes go through `asgard.jsonfile`, which writes a temporary file and renames it, retrying when Windows briefly refuses the rename.
+`%LOCALAPPDATA%\Asgard\settings\baldur.json`, created with the defaults on first use and editable on the Settings page or with `asgard baldur setup`. A file that won't parse stops every command until it's fixed or deleted: quietly falling back to the defaults could store higher numbers than the ones you chose. Writes go through `asgard.jsonfile`, which writes a temporary file and renames it, retrying when Windows briefly refuses the rename.
 
 ## Commands
 

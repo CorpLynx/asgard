@@ -1,11 +1,11 @@
 """Baldur's command line, until its window arrives.
 
-    cli.py setup --from-git --project PROJ --root C:\\src
-    cli.py collect                 read your repositories into Muninn
-    cli.py estimate                estimate the last 14 days and store proposals
-    cli.py days                    one line per day
-    cli.py report 2026-10-01       the day report, with the basis of every number
-    cli.py approve --date 2026-10-01
+    asgard baldur setup --from-git --project PROJ --root C:\\src
+    asgard baldur collect                 read your repositories into Muninn
+    asgard baldur estimate                estimate the last 14 days and store proposals
+    asgard baldur days                    one line per day
+    asgard baldur report 2026-10-01       the day report, with the basis of every number
+    asgard baldur approve --date 2026-10-01
 """
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ def cmd_setup(con: sqlite3.Connection, s: config.Settings, args: argparse.Namesp
             dropped = collect.refresh_ownership(con, removed) if removed else 0
         if dropped:
             print(f"{store.plural(dropped, 'commit')} no longer {'counts' if dropped == 1 else 'count'} as yours. "
-                  "Run cli.py estimate to update your days.")
+                  "Run asgard baldur estimate to update your days.")
 
     changes: Dict[str, object] = {}
     if args.project or args.remove_project:
@@ -176,25 +176,25 @@ def print_setup(con: sqlite3.Connection, s: config.Settings) -> None:
     todo = []
     if not emails:
         hint = collect.identity_hint()
-        todo.append(f"cli.py setup --from-git   (git config says {hint})" if hint
-                    else "cli.py setup --email you@agency.gov")
+        todo.append(f"asgard baldur setup --from-git   (git config says {hint})" if hint
+                    else "asgard baldur setup --email you@agency.gov")
     if not s.project_keys:
-        todo.append("cli.py setup --project PROJ   (each Jira project you work in)")
+        todo.append("asgard baldur setup --project PROJ   (each Jira project you work in)")
     if not s.repo_roots:
-        todo.append("cli.py setup --root C:\\src   (the folder your repositories are in)")
+        todo.append("asgard baldur setup --root C:\\src   (the folder your repositories are in)")
     print()
     if todo:
         print("Still to do:")
         for t in todo:
             print(f"  {t}")
     else:
-        print("Next: cli.py collect")
+        print("Next: asgard baldur collect")
 
 
 def cmd_collect(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
     only = [Path(p) for p in args.paths] if args.paths else None
     if only is None and not s.repo_roots:
-        raise CliError("Tell Baldur where your repositories are first: cli.py setup --root C:\\src")
+        raise CliError("Tell Baldur where your repositories are first: asgard baldur setup --root C:\\src")
     for p in only or ():
         if not (p / ".git").exists():
             raise CliError(f"{p} isn't a git repository.")
@@ -219,7 +219,7 @@ def cmd_collect(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
             bits.append(f"{r.reflog_new} new reflog entries")
             print(f"  {r.name:<24} " + ", ".join(bits))
         if result.repos and not result.failed:
-            print("\nNext: cli.py estimate")
+            print("\nNext: asgard baldur estimate")
     for r in result.failed:
         print(f"Baldur: {r.name} wasn't collected: {r.error}", file=sys.stderr)
     return 1 if result.failed else 0
@@ -237,7 +237,7 @@ def cmd_repos(con: sqlite3.Connection, s: config.Settings, args: argparse.Namesp
                        "AND c.is_merge = 0) AS n "
                        "FROM repos r ORDER BY r.name").fetchall()
     if not rows:
-        print("No repositories yet: cli.py collect")
+        print("No repositories yet: asgard baldur collect")
         return 0
     for r in rows:
         where = r["local_path"] or f"GitHub {r['github_repo']} (review only)"
@@ -278,7 +278,7 @@ def cmd_estimate(con: sqlite3.Connection, s: config.Settings, args: argparse.Nam
     waiting = con.execute("SELECT count(DISTINCT local_date) FROM day_proposals WHERE status = 'proposed' "
                           "AND work_item_key IS NOT NULL").fetchone()[0]
     if waiting and not args.dry_run:
-        print(f"\n{waiting} {'day' if waiting == 1 else 'days'} to review: cli.py days, then cli.py report DATE")
+        print(f"\n{waiting} {'day' if waiting == 1 else 'days'} to review: asgard baldur days, then asgard baldur report DATE")
     return 0
 
 
@@ -305,7 +305,7 @@ def cmd_days(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespa
     todo = store.plan(con, s, est, first, last)
     print(report.render_days(con, est, store.days_between(first, last), todo))
     if todo.would_change():
-        print("\nSome days changed since they were estimated: cli.py estimate")
+        print("\nSome days changed since they were estimated: asgard baldur estimate")
     return 0
 
 
@@ -317,7 +317,7 @@ def _proposal_line(con: sqlite3.Connection, pid: int) -> str:
 
 def cmd_approve(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
     if bool(args.ids) == bool(args.date):
-        raise CliError("Give proposal ids (from cli.py report) or --date, not both.")
+        raise CliError("Give proposal ids (from asgard baldur report) or --date, not both.")
     if args.date:
         overrides = {}
         for item in args.set:
@@ -331,7 +331,7 @@ def cmd_approve(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
         else:
             ids = approvals.approve_day(con, day.isoformat(), overrides)
         if not ids:
-            raise CliError(f"Nothing to approve on {day.isoformat()}. See cli.py report {day.isoformat()}")
+            raise CliError(f"Nothing to approve on {day.isoformat()}. See asgard baldur report {day.isoformat()}")
     else:
         if args.ai is not None:
             raise CliError("--ai goes with --date: it takes a whole day's AI-assisted figures.")
@@ -349,7 +349,7 @@ def cmd_approve(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
 
 def cmd_reject(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
     if bool(args.ids) == bool(args.date):
-        raise CliError("Give proposal ids (from cli.py report) or --date, not both.")
+        raise CliError("Give proposal ids (from asgard baldur report) or --date, not both.")
     if args.date:
         ids = approvals.reject_day(con, parse_day(args.date).isoformat())
     else:
@@ -396,7 +396,7 @@ def cmd_keys(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespa
             print(f"Note: {k.split('-')[0]} isn't in your project_keys.", file=sys.stderr)
     collect.set_keys(con, [r["id"] for r in rows], wanted)     # every clone's copy of it
     print(f"{head['sha'][:10]} {head['subject']} now counts toward {', '.join(wanted)}. "
-          "Run cli.py estimate to update its day.")
+          "Run asgard baldur estimate to update its day.")
     return 0
 
 
@@ -417,7 +417,7 @@ def cmd_actual(con: sqlite3.Connection, s: config.Settings, args: argparse.Names
               else f"Nothing was noted for {what} on {report.day_name(day)}.")
         return 0
     if not args.time:
-        raise CliError("Give the real time too, like: cli.py actual 2026-10-01 6h15m")
+        raise CliError("Give the real time too, like: asgard baldur actual 2026-10-01 6h15m")
     minutes = parse_day_minutes(args.time)
     done = calibrate.note(con, day, minutes, args.key, args.note, projects=s.project_keys)
     print(f"Noted {E.fmt(minutes)} of {what} on {report.day_name(day)} ({done}).")
@@ -425,7 +425,7 @@ def cmd_actual(con: sqlite3.Connection, s: config.Settings, args: argparse.Names
     if days < calibrate.MIN_DAYS:
         print(f"{store.plural(days, 'day')} noted so far; calibration needs {calibrate.MIN_DAYS}.")
     else:
-        print("Enough days to calibrate: cli.py calibrate")
+        print("Enough days to calibrate: asgard baldur calibrate")
     return 0
 
 
@@ -434,7 +434,7 @@ def cmd_actuals(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
     noted = calibrate.actuals(con, first, last)
     if not noted:
         print(f"No real hours noted between {first.isoformat()} and {last.isoformat()}. "
-              "Note a day with: cli.py actual DATE TIME")
+              "Note a day with: asgard baldur actual DATE TIME")
         return 0
     est = store.compute(con, s, first, last)
     renamed = store.current_keys(con)
@@ -449,7 +449,7 @@ def cmd_actuals(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
             mine = next((x.minutes_proposed for x in props if x.key == renamed.get(key, key)), 0)
             print(f"    {key:<16}{E.fmt(figures[key]):>8}{E.fmt(mine):>10}{signed(mine - figures[key]):>12}")
     days = sum(1 for figures in noted.values() if None in figures)
-    print(f"\n{store.plural(days, 'day')} with a total in this range. Calibrate with: cli.py calibrate")
+    print(f"\n{store.plural(days, 'day')} with a total in this range. Calibrate with: asgard baldur calibrate")
     return 0
 
 
@@ -493,7 +493,7 @@ def cmd_calibrate(con: sqlite3.Connection, s: config.Settings, args: argparse.Na
     print()
     if result.best is None:
         print("No setting estimates low on average against your notes, so none can be accepted. "
-              "Check the hours you noted: cli.py actuals")
+              "Check the hours you noted: asgard baldur actuals")
         return 0
     if not result.changes:
         print("Your current settings already fit best.")
@@ -501,12 +501,12 @@ def cmd_calibrate(con: sqlite3.Connection, s: config.Settings, args: argparse.Na
     if args.accept:
         cid = calibrate.accept(con, s, result)
         print(f"Accepted calibration {cid}: {result.best.dials.text()}. Past estimates keep their settings; "
-              "re-estimate open days with: cli.py estimate")
+              "re-estimate open days with: asgard baldur estimate")
         return 0
     if not result.enough:
-        print(f"Note at least {calibrate.MIN_DAYS} days before accepting ({len(days)} so far): cli.py actual DATE TIME")
+        print(f"Note at least {calibrate.MIN_DAYS} days before accepting ({len(days)} so far): asgard baldur actual DATE TIME")
     else:
-        print("Accept it with: cli.py calibrate --accept")
+        print("Accept it with: asgard baldur calibrate --accept")
     return 0
 
 
@@ -518,7 +518,7 @@ def _read_input(source: Optional[str], what: str) -> str:
     """Text from a file, or from standard input for - (or nothing, when something is piped in)."""
     if source in (None, "-"):
         if source is None and sys.stdin.isatty():
-            raise CliError(f"Give {what} as a file, or pipe it in: ... | cli.py ai ...")
+            raise CliError(f"Give {what} as a file, or pipe it in: ... | asgard baldur ai ...")
         return sys.stdin.read()
     path = Path(source)
     if not path.is_file():
@@ -572,7 +572,7 @@ def cmd_ai_record(con: sqlite3.Connection, s: config.Settings, args: argparse.Na
         else:
             print(f"Recorded r{r.id}: {what}" + (f"; replaces {', '.join(f'r{x}' for x in r.replaced)}" if r.replaced
                                                   else "") + ".")
-    print("Baldur shows it beside the day (cli.py ai show DATE); nothing changes until you approve.")
+    print("Baldur shows it beside the day (asgard baldur ai show DATE); nothing changes until you approve.")
     return 0
 
 
@@ -604,7 +604,7 @@ def cmd_ai_withdraw(con: sqlite3.Connection, s: config.Settings, args: argparse.
 def _suggestion_json(found: Optional[assist.DaySuggestions], day: dt.date) -> Dict[str, object]:
     if found is None:
         return {"day": day.isoformat(), "method": None, "tickets": [], "flags": []}
-    take = f"cli.py approve --date {day.isoformat()} --ai {found.digest()}" if found.changed() else None
+    take = f"asgard baldur approve --date {day.isoformat()} --ai {found.digest()}" if found.changed() else None
     return {"day": day.isoformat(), "method": found.method, "source": found.source, "pack": found.pack_hash,
             "reports": [f"r{x}" for x in found.reports], "flags": found.flags, "id": found.digest(), "take": take,
             "tickets": [{"key": t.key, "estimate": t.baseline, "ai_assisted": t.figure, "reason": t.reason,
@@ -629,7 +629,7 @@ def cmd_ai_pack(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
         print(f"Wrote the prompt and {day.isoformat()}'s evidence to {args.out}. Paste it into your approved AI chat, "
-              f"save its JSON answer, then: cli.py ai review {day.isoformat()} ANSWER.json")
+              f"save its JSON answer, then: asgard baldur ai review {day.isoformat()} ANSWER.json")
     else:
         print(text)
     return 0
@@ -652,7 +652,7 @@ def cmd_ai_review(con: sqlite3.Connection, s: config.Settings, args: argparse.Na
     if changed and found is not None and found.method == "review":
         for t in found.changed():
             print(f"  {t.key}: Odin's worklog comment will say: {found.posted_line(t.key)}")
-        print(f"Take them with: cli.py approve --date {day.isoformat()} --ai {found.digest()}")
+        print(f"Take them with: asgard baldur approve --date {day.isoformat()} --ai {found.digest()}")
     return 0
 
 
@@ -677,8 +677,8 @@ def cmd_ai_kiro(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
 def cmd_ai(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
     func = getattr(args, "ai_func", None)
     if func is None:
-        raise CliError("cli.py ai needs an action: record, list, withdraw, show, pack, review, guide or kiro "
-                       "(cli.py ai --help).")
+        raise CliError("asgard baldur ai needs an action: record, list, withdraw, show, pack, review, guide or kiro "
+                       "(asgard baldur ai --help).")
     return int(func(con, s, args) or 0)
 
 
@@ -686,11 +686,11 @@ def github_client(s: config.Settings) -> "github.Client":
     """A client for your GitHub, or CliError saying what's missing."""
     host = s.github_host()
     if not host:
-        raise CliError("GitHub is off. Name your server first: cli.py setup --set github_api=github.agency.gov")
+        raise CliError("GitHub is off. Name your server first: asgard baldur setup --set github_api=github.agency.gov")
     token = github.load_token(host)
     if not token:
         raise CliError(f"No GitHub token for {host} yet. Create a read-only token on {host}, then run: "
-                       "cli.py github token")
+                       "asgard baldur github token")
     return github.Client(s.github_api, token)
 
 
@@ -698,7 +698,7 @@ def cmd_github(con: sqlite3.Connection, s: config.Settings, args: argparse.Names
     host = s.github_host()
     if args.action == "token":
         if not host:
-            raise CliError("GitHub is off. Name your server first: cli.py setup --set github_api=github.agency.gov")
+            raise CliError("GitHub is off. Name your server first: asgard baldur setup --set github_api=github.agency.gov")
         if args.remove:
             gone = github.delete_token(host)
             print(f"Removed the token for {host}." if gone else f"There was no token for {host}.")
@@ -706,7 +706,7 @@ def cmd_github(con: sqlite3.Connection, s: config.Settings, args: argparse.Names
         import getpass
         token = getpass.getpass(f"Paste a read-only token for {host} (it isn't shown): ")
         github.save_token(host, token)
-        print(f"Saved in Windows Credential Manager as \"{github.token_target(host)}\". Try: cli.py github sync")
+        print(f"Saved in Windows Credential Manager as \"{github.token_target(host)}\". Try: asgard baldur github sync")
         return 0
     if args.action == "sync":
         res = github.sync(con, s, github_client(s))
@@ -725,7 +725,7 @@ def cmd_github(con: sqlite3.Connection, s: config.Settings, args: argparse.Names
     last = con.execute("SELECT max(finished_at) FROM sync_runs WHERE app = 'baldur' AND stream LIKE 'github:%' "
                        "AND status IN ('ok', 'partial')").fetchone()[0]
     print(f"GitHub          {s.github_api}")
-    print(f"Token           {'saved' if token else 'none: cli.py github token'}")
+    print(f"Token           {'saved' if token else 'none: asgard baldur github token'}")
     print(f"Last sync       {last or 'never'}")
     for line in desk.review_lines(con):
         print(line)
@@ -752,7 +752,7 @@ def schedule_command(day: str, at: str, remove: bool = False, python: Optional[s
 
 def cmd_schedule(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
     if os.name != "nt":
-        raise CliError("Scheduled collection uses Windows Task Scheduler. Run cli.py collect weekly here instead.")
+        raise CliError("Scheduled collection uses Windows Task Scheduler. Run asgard baldur collect weekly here instead.")
     day = args.day.upper()[:3]
     if day not in DAYS:
         raise CliError(f"--day is one of {', '.join(DAYS)}")
@@ -762,7 +762,7 @@ def cmd_schedule(con: sqlite3.Connection, s: config.Settings, args: argparse.Nam
     done = subprocess.run(cmd, capture_output=True, text=True, creationflags=0x08000000)
     if done.returncode != 0:
         raise CliError("Task Scheduler refused: " + (done.stderr or done.stdout).strip()
-                       + "\nIf your computer blocks scheduled tasks, run cli.py collect at least weekly yourself.")
+                       + "\nIf your computer blocks scheduled tasks, run asgard baldur collect at least weekly yourself.")
     print("Removed the weekly collection." if args.remove
           else f"Baldur will collect every {day} at {args.time} while you're signed in. "
                f"Results go to {paths.log_dir() / 'baldur.log'}.")
@@ -837,7 +837,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--minutes", metavar="TIME", help="approve one proposal at another figure, like 1h15m")
     p.add_argument("--set", action="append", default=[], metavar="KEY=TIME", help="with --date: another figure")
     p.add_argument("--ai", nargs="?", const="", metavar="ID",
-                   help="with --date: take the day's AI-assisted figures, by the id cli.py ai show gave them")
+                   help="with --date: take the day's AI-assisted figures, by the id asgard baldur ai show gave them")
 
     p = add("reject", cmd_reject, "Reject proposals, by id or a whole day")
     p.add_argument("ids", nargs="*", type=int, metavar="ID")
@@ -866,7 +866,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--to", metavar="DATE", help="last noted day to use")
     p.add_argument("--accept", action="store_true", help="make the best fit your settings")
 
-    p = add("ai", cmd_ai, "The AI-assisted method: agent estimates and AI review (see: cli.py ai guide)")
+    p = add("ai", cmd_ai, "The AI-assisted method: agent estimates and AI review (see: asgard baldur ai guide)")
     ai = p.add_subparsers(dest="ai_action", metavar="action")
 
     def ai_add(name: str, func, help_text: str) -> argparse.ArgumentParser:

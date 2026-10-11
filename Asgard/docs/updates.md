@@ -30,7 +30,7 @@ The packaged build ([packaging.md](packaging.md)) installs the same way: its set
 ## Rolling back
 
 - **Code:** swap `app.old-<time>` back (`Asgard.pyw --rollback`, to build). Possible until the next successful start removes it.
-- **Schema:** migrations are forward-only. After a migration, rolling the code back needs the database from before it: `Asgard.pyw --muninn restore muninn-<date>-before-v<N>.db`. Anything written since is lost, which is why the updater says so before migrating and why migrations stay additive.
+- **Schema:** migrations are forward-only. After a migration, rolling the code back needs the database from before it: `asgard muninn restore muninn-<date>-before-v<N>.db`. Anything written since is lost, which is why the updater says so before migrating and why migrations stay additive.
 
 ## Holding a migration back
 

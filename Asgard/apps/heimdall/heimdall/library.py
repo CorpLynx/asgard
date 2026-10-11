@@ -3,7 +3,7 @@
 A library is something like a firewall's address groups: entries with a name people pick
 ("web-servers"), an optional description, and the value that goes into the form
 ("10.20.0.0/24"). Whoever looks after the list publishes it as a JSON file (in a repository, on a
-share); `heimdall library import FILE` reads it and keeps an encrypted copy in
+share); `asgard heimdall library import FILE` reads it and keeps an encrypted copy in
 %LOCALAPPDATA%\\Asgard\\heimdall\\libraries\\<name>.library. Importing the same library again
 replaces it.
 
@@ -92,15 +92,19 @@ class Library:
         hits.sort(key=lambda e: (not _fold(e.name).startswith(start), _fold(e.name)))
         return hits[:max(0, limit)]
 
-    def fill(self, entry: str) -> str:
-        """The text a picked entry puts in the form, or LibraryError naming close matches."""
+    def fill(self, entry: str, names_only: bool = False) -> str:
+        """The text a picked entry puts in the form, or LibraryError naming close matches.
+
+        names_only gives the entry's name whatever the library renders: for a plan that is shown to an
+        AI client, which may see names but never values (Ysildir's heimdall_plan).
+        """
         found = self.find(entry)
         if found is None:
             near = ", ".join(e.name for e in self.search(entry, 5))
             raise LibraryError(f'"{entry}" isn\'t in the library {self.name}.'
-                               + (f" Did you mean: {near}?" if near else " Search it with 'heimdall library show "
+                               + (f" Did you mean: {near}?" if near else " Search it with 'asgard heimdall library show "
                                   f"{self.name} --search TEXT'."))
-        return found.value if self.renders == "value" else found.name
+        return found.value if self.renders == "value" and not names_only else found.name
 
     def info(self) -> Dict[str, Any]:
         return {"name": self.name, "description": self.description, "renders": self.renders,
@@ -180,13 +184,13 @@ class Store:
         except FileNotFoundError:
             have = ", ".join(self.names()) or "none imported yet"
             raise LibraryError(f"No library named {name} on this computer (libraries: {have}). "
-                               "Import it with 'heimdall library import FILE'.") from None
+                               "Import it with 'asgard heimdall library import FILE'.") from None
         lib = self._decode(raw, path)
         self._cache[key] = lib
         return lib
 
     def _decode(self, raw: bytes, path: Path) -> Library:
-        again = "Import it again with 'heimdall library import FILE'."
+        again = "Import it again with 'asgard heimdall library import FILE'."
         if not raw.startswith(MAGIC):
             raise LibraryError(f"{path} isn't a library Heimdall saved. Delete it, then import the library again.")
         kind, _, body = raw[len(MAGIC):].partition(b"\n")
@@ -265,9 +269,9 @@ class Store:
         self._cache.pop(_fold(name), None)
         return _fold(name)
 
-    def resolver(self) -> Callable[[str, str], str]:
-        """For variables.check: (library, entry) -> what the entry fills in."""
-        return lambda library, entry: self.load(library).fill(entry)
+    def resolver(self, names_only: bool = False) -> Callable[[str, str], str]:
+        """For variables.check: (library, entry) -> what the entry fills in (its name, with names_only)."""
+        return lambda library, entry: self.load(library).fill(entry, names_only)
 
 
 # ------------------------------------------------------------------ the published file
@@ -341,7 +345,7 @@ def _from_json(data: Dict[str, Any], where: str) -> Library:
                        version=data.get("version", ""), source=data.get("source", ""),
                        imported_at=data.get("imported_at", ""))
     except (KeyError, TypeError):
-        raise LibraryError(f"{where} is damaged. Import the library again with 'heimdall library import FILE'.") from None
+        raise LibraryError(f"{where} is damaged. Import the library again with 'asgard heimdall library import FILE'.") from None
 
 
 def _fold(text: str) -> str:

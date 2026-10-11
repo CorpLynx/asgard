@@ -1,14 +1,14 @@
-"""Ysildir from the command line:  py -3 apps\\ysildir\\cli.py --help  (or ysildir.cmd help)
+"""Ysildir from the command line:  py -3 apps\\ysildir\\cli.py --help  (or asgard ysildir help)
 
     cli.py serve                 what an AI client starts (stdio); you never run it by hand
     cli.py check                 start the server in memory and list what an agent would see
     cli.py tools                 each tool, on or off, and what it sends to the AI client
     cli.py tools --on NAME ...   switch tools on, or --off NAME ... (you run this; an agent can't)
-    cli.py setup --kiro DIR      connect an AI client; also --kiro-user, --vscode DIR, --vscode-user
+    asgard baldur setup --kiro DIR      connect an AI client; also --kiro-user, --vscode DIR, --vscode-user
                                  and --claude DIR. --print shows what it would do; --force replaces
 
 Finds the asgard package two folders up (or at ASGARD_APP, which Asgard sets when it starts an
-app) and Baldur beside Ysildir, so it runs from the installed copy or a checkout. Needs Python
+app) and Baldur and Heimdall beside Ysildir, so it runs from the installed copy or a checkout. Needs Python
 3.10+ and the MCP SDK (mcp and pydantic, MODULES.md); without them it says what's missing and what
 still works, and exits 2. While serving, nothing but the SDK writes to standard output: it's the
 protocol's channel.
@@ -23,12 +23,12 @@ from typing import List, Optional, Sequence
 
 HERE = Path(__file__).resolve().parent
 ROOT = os.environ.get("ASGARD_APP") or str(HERE.parent.parent)
-for folder in (str(HERE.parent / "baldur"), str(HERE), ROOT):
+for folder in (str(HERE.parent / "baldur"), str(HERE.parent / "heimdall"), str(HERE), ROOT):
     if folder not in sys.path:
         sys.path.insert(0, folder)
 
-FALLBACK = ("Without Ysildir, an agent can still record its estimates with baldur.cmd ai record ... --json, and "
-            "AI review still works through the clipboard: baldur.cmd ai pack DATE, then baldur.cmd ai review DATE "
+FALLBACK = ("Without Ysildir, an agent can still record its estimates with asgard baldur ai record ... --json, and "
+            "AI review still works through the clipboard: asgard baldur ai pack DATE, then asgard baldur ai review DATE "
             "ANSWER.json.")
 
 
@@ -77,7 +77,7 @@ def show_tools(config) -> List[str]:          # config: ysildir.config.Config
         out.append(f"  {'on ' if config.on(s.name) else 'off'}  {s.name:<26} sends: {s.sends}")
     if config.unknown:
         out.append(f"  Ignored, not Ysildir tools: {', '.join(config.unknown)}")
-    out.append("Each tool's data flow needs your ISSO's approval. Switch one on with: ysildir.cmd tools --on NAME, "
+    out.append("Each tool's data flow needs your ISSO's approval. Switch one on with: asgard ysildir tools --on NAME, "
                "then restart the MCP server in your AI client.")
     return out
 

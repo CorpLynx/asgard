@@ -215,7 +215,7 @@ class CalibrationCliTests(CalibrationCase):
         code, out, err = self.cli("calibrate")
         self.assertEqual(code, 0, err)
         self.assertIn("Best that runs low", out)
-        self.assertIn("Accept it with: cli.py calibrate --accept", out)
+        self.assertIn("Accept it with: asgard baldur calibrate --accept", out)
         self.assertIn("can't tell settings apart for: ambient weight", out)
         code, out, err = self.cli("calibrate", "--accept")
         self.assertEqual(code, 0, err)

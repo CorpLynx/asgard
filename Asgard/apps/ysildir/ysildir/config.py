@@ -7,7 +7,7 @@ the ISSO's decision and each tool has a switch (docs/integration/ysildir.md):
 - A broken file fails closed: every tool except asgard_guide is off, and the guide's tools topic
   says what's wrong, naming the bad entry.
 - Names that aren't Ysildir tools are ignored, and listed in the tools topic.
-The server reads the file when it starts and never writes it. `ysildir.cmd tools` writes it,
+The server reads the file when it starts and never writes it. `asgard ysildir tools` writes it,
 through a temporary file and a rename. The person runs that, not an agent: Kiro's guard hook
 blocks it.
 
@@ -27,7 +27,7 @@ from .switches import ALWAYS_ON, HELP, NAMES, SWITCHES, VERSION, Switch  # noqa:
 
 
 class SwitchesFile(BaseModel):
-    """ysildir.json, as `ysildir.cmd tools` writes it."""
+    """ysildir.json, as `asgard ysildir tools` writes it."""
     model_config = ConfigDict(extra="ignore")
 
     version: int = Field(VERSION, ge=1, le=VERSION)
@@ -57,7 +57,7 @@ def defaults() -> Dict[str, bool]:
 
 
 def everything_on(path: Optional[Path] = None) -> Config:
-    """Every tool on: for `ysildir.cmd check --all` and the tests, never for serving."""
+    """Every tool on: for `asgard ysildir check --all` and the tests, never for serving."""
     return Config({n: True for n in NAMES}, path or settings_path())
 
 
@@ -101,7 +101,7 @@ def save(tools: Dict[str, bool], path: Optional[Path] = None) -> Path:
 
 
 def switch(names: Iterable[str], on: bool, path: Optional[Path] = None) -> Config:
-    """Turn tools on or off, keeping the other switches. The person runs this (`ysildir.cmd tools`)."""
+    """Turn tools on or off, keeping the other switches. The person runs this (`asgard ysildir tools`)."""
     names = list(names)
     bad = [n for n in names if n not in NAMES]
     if bad:

@@ -254,7 +254,7 @@ class Client:
         code = exc.code
         if code == 401:
             return GitHubError(f"{self.host} refused the token (401). It may have expired or been revoked: "
-                               "create a new read-only token and run  baldur.cmd github token", code)
+                               "create a new read-only token and run  asgard baldur github token", code)
         if code == 403 and exc.headers.get("X-RateLimit-Remaining") == "0":
             reset = exc.headers.get("X-RateLimit-Reset")
             when = (dt.datetime.fromtimestamp(int(reset)).strftime("%H:%M") if reset and reset.isdigit()

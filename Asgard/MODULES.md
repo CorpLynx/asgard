@@ -37,11 +37,11 @@ What always stays standard library: `asgard/muninn/` (every app and Odin import 
 | | |
 | --- | --- |
 | Pin | `mcp==2.3.0`, the official MCP Python SDK; needs Python 3.10+. It brings `mcp-types` at the same version, and about 30 wheels in all |
-| Used in | `apps/ysildir/ysildir/server.py` (the server, and `ysildir.cmd check`'s in-memory client), `apps/ysildir/ysildir/results.py` (`ToolError`) |
+| Used in | `apps/ysildir/ysildir/server.py` (the server, and `asgard ysildir check`'s in-memory client), `apps/ysildir/ysildir/results.py` (`ToolError`) |
 | Needed for | Ysildir: the MCP server an AI client (Kiro, Copilot, Claude Code) starts over stdio. Baldur, Muninn and every command line work without it |
 | Native code | Yes, through its dependencies: `pydantic-core`, `cryptography`, `cffi` and `rpds-py`, plus `pywin32` on Windows. App Control must allow their DLLs. Its HTTP parts (`starlette`, `uvicorn`, `sse-starlette`) are installed but never started |
 | Approval | Pending |
-| If it's missing | `ysildir.cmd` says what's missing (the package, or Python 3.10+) and exits 2. Agents still record through `baldur.cmd ai record`, and the review still runs at the clipboard tier (`ai pack`, `ai review`) |
+| If it's missing | `ysildir.cmd` says what's missing (the package, or Python 3.10+) and exits 2. Agents still record through `asgard baldur ai record`, and the review still runs at the clipboard tier (`ai pack`, `ai review`) |
 | Stdlib alternative | A JSON-RPC 2.0 server over stdio on the standard library: about 300 lines, Python 3.9+, over the same handlers (`baldur_tools.py`, `muninn_tools.py`, `teach.py`). The Ysildir spec's first revision (commit `d510709`) designs it. It has to track MCP's protocol versions by hand |
 | Package alternatives | The newest `mcp` 1.x on the mirror (`from mcp.server.fastmcp import FastMCP`, with the same `add_tool`, decorators, annotations and `ToolError`); `fastmcp` 4.x, the standalone framework, which has more dependencies. Either changes only `server.py` and `results.py` |
 

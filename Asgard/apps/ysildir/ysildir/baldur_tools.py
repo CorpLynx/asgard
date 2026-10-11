@@ -26,7 +26,7 @@ from .models import (MAX_ITEMS, AgentReport, Day, DateFrom, DateTo, DayAI, DayTi
                      Estimates, IncludeReport, IncludeWithdrawn, ModelName, OptionalDay, Recorded, ReportId,
                      ReviewChecked, ReviewPack, ReviewReply, Withdrawn)
 
-BALDUR = "baldur.cmd"
+BALDUR = "asgard baldur"
 REPORT_CHARS = 32 * 1024        # the day report holds commit subjects; longer is cut
 PACK_BYTES = 60 * 1024          # a bigger pack goes through the clipboard tier instead
 

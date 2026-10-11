@@ -51,24 +51,23 @@ class Backend:
     """Called from QML through the shell's bridge. Returns plain data, or raises ValueError for the page."""
 
     def __init__(self) -> None:
-        self._con: Optional[sqlite3.Connection] = None
         # Which day the day page shows. The shell keeps one backend per app, so this survives moving
         # between pages; QML pages are built again each time and can't hold it themselves.
         self._chosen: Optional[str] = None
 
     # ---- plumbing ---------------------------------------------------------
     def _open(self, readonly: bool = True) -> sqlite3.Connection:
-        """Muninn, kept open for reads. A write gets its own connection, so the read one stays read-only.
+        """Muninn, opened for one call and closed by the caller, as Odin's backend does.
+
+        Not kept open: the shell calls a backend from worker threads (the Dashboard, callAsync), and a
+        connection is only usable on the thread that opened it. One left open also holds muninn.db
+        open on Windows.
 
         Muninn's errors already say what to do ("Open Asgard once, then start baldur again"), but they
         aren't ValueErrors, so the shell would log them as unexpected and show a generic line instead.
         Raised as ValueError, the page shows the real message.
         """
-        if readonly:
-            if self._con is None:
-                self._con = _expected(muninn.open_app, "baldur", supported=SCHEMA, readonly=True)
-            return self._con
-        return _expected(muninn.open_app, "baldur", supported=SCHEMA)
+        return _expected(muninn.open_app, "baldur", supported=SCHEMA, readonly=readonly)
 
     def _settings(self) -> settings_mod.Settings:
         settings = settings_mod.load()
@@ -83,7 +82,10 @@ class Backend:
         start = desk.week_of(_date(monday))
         settings = self._settings()
         con = self._open()
-        rows = _expected(desk.load_week, con, settings, start)
+        try:
+            rows = _expected(desk.load_week, con, settings, start)
+        finally:
+            con.close()
         return {
             "monday": start.isoformat(),
             "previous": (start - dt.timedelta(days=7)).isoformat(),
@@ -106,7 +108,11 @@ class Backend:
         settings = self._settings()
         chosen = _date(date or self._chosen)
         self._chosen = chosen.isoformat()
-        view = _expected(desk.load_day, self._open(), settings, chosen)
+        con = self._open()
+        try:
+            view = _expected(desk.load_day, con, settings, chosen)
+        finally:
+            con.close()
         ai = view.ai
         return {
             "date": view.day.isoformat(),
@@ -198,8 +204,13 @@ class Backend:
 
     # ---- reviews waiting --------------------------------------------------
     def reviews(self) -> List[Dict[str, Any]]:
+        con = self._open()
+        try:
+            items = desk.review_items(con)
+        finally:
+            con.close()
         return [{"kind": i.kind, "label": i.label, "title": i.title, "who": i.who, "state": i.state,
-                 "url": i.url, "draft": i.draft} for i in desk.review_items(self._open())]
+                 "url": i.url, "draft": i.draft} for i in items]
 
     # ---- settings, edited in the window ------------------------------------
     # By key into baldur.json. settings.validate() has the last word, so a bad value is refused with

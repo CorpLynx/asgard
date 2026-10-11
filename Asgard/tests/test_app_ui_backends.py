@@ -108,6 +108,26 @@ class BaldurBackendTests(Home):
         self.assertEqual(self.b.day(other)["date"], other)                # and asking moves it
         self.assertEqual(self.b.day()["date"], other)
 
+    def test_pages_can_be_read_from_a_worker_thread_after_the_ui_thread(self):
+        """The shell calls one backend from the UI thread and from workers (Dashboard, callAsync); a
+        connection kept from the first call is refused on the next thread."""
+        import threading
+        self.b.week()
+        problems = []
+
+        def work():
+            try:
+                self.b.week()
+                self.b.day()
+                self.b.reviews()
+            except Exception as exc:                        # noqa: BLE001 - the test reports it
+                problems.append(exc)
+
+        t = threading.Thread(target=work)
+        t.start()
+        t.join()
+        self.assertEqual(problems, [])
+
     def test_an_empty_day_offers_nothing_to_approve(self):
         self.set_up_baldur()
         day = self.b.day(dt.date.today().isoformat())

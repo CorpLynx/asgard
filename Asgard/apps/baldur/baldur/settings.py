@@ -13,6 +13,8 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
+import time
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -263,6 +265,22 @@ def load(path: Optional[Path] = None, create: bool = True) -> Settings:
         return Settings(warnings=[f"couldn't use {path.name}: {exc}"], broken=True)
 
 
+# One writer at a time in this process. On Windows a rename onto a file that another thread is
+# renaming onto, or reading, is refused ("Access is denied") rather than waiting its turn.
+_SAVING = threading.Lock()
+
+
+def _replace(tmp: Path, path: Path, tries: int = 20) -> None:
+    for attempt in range(tries):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == tries - 1:
+                raise
+            time.sleep(0.05)        # a reader has it open for a moment
+
+
 def save(values: Dict[str, Any], path: Optional[Path] = None) -> Path:
     path = path or settings_path()
     data = {"_help": "Baldur's settings. See the Baldur spec for what each one does."}
@@ -276,7 +294,8 @@ def save(values: Dict[str, Any], path: Optional[Path] = None) -> Path:
         with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
             json.dump(data, fh, indent=2)
             fh.write("\n")
-        os.replace(tmp, path)
+        with _SAVING:
+            _replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import paths, winutil
+from . import paths, shim, winutil
 
 DETACHED = 0x00000008 | 0x00000200 | 0x08000000      # detached, own group, no window
 
@@ -95,6 +95,8 @@ def default_items() -> List[Dict[str, str]]:
         if folder:
             items.append({"kind": "file", "path": str(folder / paths.SHORTCUT_NAME)})
     items.append({"kind": "regkey", "path": "HKCU\\" + paths.UNINSTALL_SUBKEY})
+    items.append({"kind": "dir", "path": str(paths.bin_dir())})
+    items.append({"kind": "path", "path": str(paths.bin_dir())})
     return items
 
 
@@ -151,7 +153,8 @@ def remove_scheduled_tasks() -> List[str]:
     return removed
 
 
-def uninstall(purge: bool = False) -> Result:
+def uninstall(purge: bool = False, reg: Any = None) -> Result:
+    """reg stands in for winreg in tests (the Path entry)."""
     data = paths.data_dir()
     try:
         os.chdir(tempfile.gettempdir())  # Windows can't delete a folder that is the current directory
@@ -187,8 +190,17 @@ def uninstall(purge: bool = False) -> Result:
                 elif p.exists():
                     _rmtree(p)
                     res.removed.append(raw)
+            elif kind == "path":
+                # Only Asgard's own folder ever comes out of your Path; another entry is left alone.
+                p = Path(raw)
+                if not _within(p, data) or _resolve(p) == _resolve(data):
+                    res.skipped.append((raw, "not Asgard's folder, so left in your Path"))
+                elif (winutil.IS_WINDOWS or reg is not None) and shim.remove_from_user_path(p, reg):
+                    res.removed.append(f"{raw} from your Path")
             else:
                 res.skipped.append((raw, f"unknown item kind {kind!r}"))
+        except shim.PathError as exc:
+            res.skipped.append((raw, str(exc)))
         except OSError as exc:
             res.skipped.append((raw, str(exc)))
 

@@ -10,6 +10,10 @@ Rules it keeps:
   can't cost you every saved template.
 - Writes go to a temporary file first and replace the old one in one step.
 - plan() is the one place values are layered: field default < template < this run's overrides.
+  It is also where template variables (variables.py) get their values, so a fill never starts
+  with a blank the template asked for.
+- Version 2 of the file is version 1 with template variables. Braces in a version 1 file were
+  plain text, so they're read as {{ and }} and keep meaning what they meant.
 
 Standard library only, and no Playwright: a UI can import this module freely.
 """
@@ -26,9 +30,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from asgard import paths
 
-from .form import Field, Form, FormError, coerce, render
+from . import variables as tvars
+from .form import Field, Form, FormError, coerce
 
-VERSION = 1
+VERSION = 2
+READS = (1, 2)
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,63}$")
 
 
@@ -55,11 +61,14 @@ class Plan:
     steps: List[Tuple[Field, Any]]          # value None means "leave the field as it is"
     attachment: Optional[str]
     template: Optional[str]
+    variables: List[Tuple[tvars.Variable, str]] = field(default_factory=list)   # and what each fills in
 
     def to_json(self) -> Dict[str, Any]:
         return {"template": self.template, "attachment": self.attachment,
                 "fields": [{"label": f.label, "kind": f.kind, "value": v, "action": _action(v)}
-                           for f, v in self.steps]}
+                           for f, v in self.steps],
+                "variables": [{"name": var.name, "label": var.label, "kind": var.kind.lower(), "value": text}
+                              for var, text in self.variables]}
 
 
 def templates_path() -> Path:
@@ -91,16 +100,21 @@ class Store:
         if not isinstance(raw, dict) or not isinstance(raw.get("templates", {}), dict):
             self.broken = 'it must be an object with a "templates" object inside'
             return
-        if raw.get("version", VERSION) != VERSION:
-            self.broken = f"it is version {raw.get('version')!r}, and this Heimdall reads version {VERSION}"
+        version = raw.get("version", VERSION)
+        if version not in READS:
+            self.broken = (f"it is version {version!r}, and this Heimdall reads versions "
+                           f"{', '.join(str(v) for v in READS)}")
             return
         for name, body in raw.get("templates", {}).items():
             if not isinstance(body, dict) or not isinstance(body.get("values", {}), dict):
                 self.broken = f'template "{name}" must be an object with a "values" object'
                 return
+            values = dict(body.get("values", {}))
+            if version == 1:
+                values = {k: tvars.escape(v) if isinstance(v, str) else v for k, v in values.items()}
             self.items[_key(name)] = Saved(
                 name=name,
-                values=dict(body.get("values", {})),
+                values=values,
                 attachment=body.get("attachment") or None,
                 description=str(body.get("description") or ""),
                 updated=str(body.get("updated") or ""),
@@ -135,6 +149,7 @@ class Store:
                                 "Change it with 'heimdall template edit', or overwrite it with --replace.")
         saved = Saved(name=name, values=normalize(form, values), attachment=_clean_attachment(attachment),
                       description=description.strip(), updated=_now())
+        variables_of(form, saved)            # one meaning per variable, none used but undefined
         self.items[_key(name)] = saved
         return saved
 
@@ -163,6 +178,7 @@ class Store:
             description=current.description if description is None else description.strip(),
             updated=_now(),
         )
+        variables_of(form, saved)
         del self.items[_key(current.name)]
         self.items[_key(new_name)] = saved
         return saved
@@ -208,8 +224,11 @@ def normalize(form: Form, values: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def problems(form: Form, saved: Saved) -> List[str]:
-    """Why a saved template no longer suits the form (empty when it does)."""
+def problems(form: Form, saved: Saved, libraries: Any = None) -> List[str]:
+    """Why a saved template no longer suits the form (empty when it does).
+
+    With libraries (a library.Store), a LIBRARY variable whose library isn't here is a problem too.
+    """
     found: List[str] = []
     for label, value in saved.values.items():
         f = form.field(label)
@@ -220,29 +239,57 @@ def problems(form: Form, saved: Saved) -> List[str]:
             coerce(f, value)
         except FormError as exc:
             found.append(str(exc))
+    if found:
+        return found
+    try:
+        defined = variables_of(form, saved)
+    except TemplateError as exc:
+        return [str(exc)]
+    if libraries is not None:
+        for name in sorted({v.library.casefold() for v in defined if v.kind == "LIBRARY"}):
+            if not libraries.has(name):
+                found.append(f"the library {name} isn't on this computer; import it with "
+                             "'heimdall library import FILE'")
     return found
 
 
+def variables_of(form: Form, saved: Optional[Saved], overrides: Optional[Dict[str, Any]] = None
+                 ) -> List[tvars.Variable]:
+    """The template variables a fill will ask for, in form order: field default < template < overrides."""
+    chosen = _layered(form, saved, overrides or {})
+    texts = [(f'"{f.label}"', chosen[f.label]) for f in form.fields if isinstance(chosen[f.label], str)]
+    try:
+        return tvars.collect(texts)
+    except tvars.VariableError as exc:
+        raise TemplateError(str(exc)) from None
+
+
 def plan(form: Form, saved: Optional[Saved], overrides: Dict[str, Any], attachment: Optional[str],
-         clear_attachment: bool, today: Optional[dt.date] = None) -> Plan:
-    """Layer default < template < overrides, check required fields and the attachment, fill in $today."""
+         clear_attachment: bool, today: Optional[dt.date] = None, given: Optional[Dict[str, Any]] = None,
+         libraries: Any = None) -> Plan:
+    """Layer default < template < overrides, check required fields and the attachment, and fill in
+    $today and the template's variables (given: name -> value; libraries: a library.Store)."""
     if saved is not None:
-        bad = problems(form, saved)
+        bad = problems(form, saved, libraries)
         if bad:
             raise TemplateError(f'Template "{saved.name}" doesn\'t match the form: {"; ".join(bad)}. '
                                 f"Fix it with 'heimdall template edit \"{saved.name}\"'.")
-    chosen: Dict[str, Any] = {f.label: f.default for f in form.fields}
-    if saved is not None:
-        chosen.update(normalize(form, saved.values))
-    chosen.update(normalize(form, overrides))
+    chosen = _layered(form, saved, overrides)
 
     missing = [f.label for f in form.fields if f.required and chosen[f.label] in (None, "")]
     if missing:
         raise TemplateError(f"Required fields have no value: {', '.join(missing)}. "
                             "Add them to the template, or give them with --set LABEL=VALUE.")
 
+    defined = variables_of(form, saved, overrides)
+    try:
+        filled = tvars.resolve(defined, dict(given or {}), libraries.resolver() if libraries is not None else None)
+    except ValueError as exc:        # VariableError, or a library that can't answer (LibraryError)
+        raise TemplateError(str(exc)) from None
+
     subs = placeholder_values(today)
-    steps = [(f, render(chosen[f.label], subs)) for f in form.fields]
+    steps = [(f, tvars.render(chosen[f.label], filled, subs) if isinstance(chosen[f.label], str) else chosen[f.label])
+             for f in form.fields]
 
     path = None if clear_attachment else (_clean_attachment(attachment) or (saved.attachment if saved else None))
     if path:
@@ -250,7 +297,16 @@ def plan(form: Form, saved: Optional[Saved], overrides: Dict[str, Any], attachme
         if not p.is_file():
             raise TemplateError(f"Attachment not found: {p}. Fix the path, or run with --no-attachment.")
         path = str(p.resolve())
-    return Plan(steps=steps, attachment=path, template=saved.name if saved else None)
+    return Plan(steps=steps, attachment=path, template=saved.name if saved else None,
+                variables=[(v, filled[v.name]) for v in defined])
+
+
+def _layered(form: Form, saved: Optional[Saved], overrides: Dict[str, Any]) -> Dict[str, Any]:
+    chosen: Dict[str, Any] = {f.label: f.default for f in form.fields}
+    if saved is not None:
+        chosen.update(normalize(form, saved.values))
+    chosen.update(normalize(form, overrides))
+    return chosen
 
 
 def placeholder_values(today: Optional[dt.date] = None) -> Dict[str, str]:

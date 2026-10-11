@@ -230,6 +230,33 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(s.qml_warnings, [])
         del case
 
+    def test_heimdall_pages_load_cleanly_with_template_variables_and_a_library(self):
+        """The variable inputs, the library picker and the Libraries card only exist with data behind them."""
+        self.write_form()
+        from heimdall import library as libs
+        from heimdall.ui_backend import Backend
+        switch = os.environ.get(libs.UNPROTECTED_ENV)
+        os.environ[libs.UNPROTECTED_ENV] = "1"           # Windows ignores it and uses DPAPI
+        self.addCleanup(lambda: os.environ.pop(libs.UNPROTECTED_ENV, None) if switch is None
+                        else os.environ.__setitem__(libs.UNPROTECTED_ENV, switch))
+        published = self.dir / "lib.json"
+        published.write_text(json.dumps({"library": "ip_library_12", "entries": {"web-servers": "10.20.0.0/24"}}),
+                             encoding="utf-8")
+        b = Backend()
+        b.import_library(str(published))
+        b.save_template("", {"name": "Access", "values": {
+            "Short description": "{SYS:TEXTBOX('string'):\"System Name\"} from {SRC:LIBRARY('ip_library_12'):'Source'}"
+                                 " {URG:CHECKBOX(\"Emergency change\"):'Urgent'} in {ENV:DROPDOWN('prod','test')}"}})
+        s = self.open(app="heimdall")
+        self.visit_all(s)
+        s.navigation.go("heimdall:templates")
+        pump()
+        self.assertEqual(self.page_value(s, "selected"), "Access")
+        values = self.page_value(s, "asksList")
+        values = values.toVariant() if hasattr(values, "toVariant") else values
+        self.assertEqual([x["kind"] for x in values], ["textbox", "library", "checkbox", "dropdown"])
+        self.assertEqual(s.qml_warnings, [])
+
     def test_heimdall_pages_load_cleanly_with_a_form_and_templates(self):
         self.write_form()
         from heimdall.ui_backend import Backend

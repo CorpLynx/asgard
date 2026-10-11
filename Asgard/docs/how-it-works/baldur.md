@@ -1,6 +1,6 @@
 # How Baldur works
 
-Oct 11, 2026 · model `baldur-1`, Muninn schema 4–5 · code in `apps/baldur/baldur/` · the rules are in [baldur-spec.md](../baldur-spec.md) and [integration/baldur.md](../integration/baldur.md)
+Oct 11, 2026 · model `baldur-1`, Muninn schema 4–5 · code in `apps/baldur/baldur/` · the rules are in [baldur-spec.md](../../../docs/baldur-spec.md) and [integration/baldur.md](../integration/baldur.md)
 
 Baldur turns your git history into a proposed figure of development time per Jira ticket per day, shows you how it got each one, and stores the figure you approve. It never writes to Jira; Odin posts what you approve.
 

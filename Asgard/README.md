@@ -16,7 +16,7 @@ How Baldur, Ysildir and Muninn work, from your git history to an approved figure
 3. Right-click the zip and choose **Extract All**.
 4. Open the extracted folder and double-click **setup-Asgard.cmd**.
 
-Setup copies Asgard to `%LOCALAPPDATA%\Asgard\app`, adds an **Asgard** shortcut to the Start menu, lists Asgard in **Settings > Apps**, and opens it. To keep it handy, right-click Asgard in the Start menu and choose **Pin to taskbar**.
+Setup copies Asgard to `%LOCALAPPDATA%\Asgard\app`, adds an **Asgard** shortcut to the Start menu, lists Asgard in **Settings > Apps**, puts the [`asgard` command](#the-asgard-command) on your Path, and opens it. To keep it handy, right-click Asgard in the Start menu and choose **Pin to taskbar**.
 
 Setup options: `setup-Asgard.cmd --desktop` also adds a desktop shortcut, and `--no-launch` skips opening Asgard at the end.
 
@@ -53,22 +53,36 @@ To upgrade, close Asgard, extract the new zip and run its setup: it replaces `%L
 - If an app closes right after starting, Asgard shows the last lines of its log. Logs are in `%LOCALAPPDATA%\Asgard\logs`.
 - **Counts on tiles** come from Muninn, the database the apps share: Odin's tile counts worklogs waiting to post, Baldur's counts reviews requested of you. Point at a tile, or move to it with the arrow keys, to see what the count means. Counts refresh every minute and when you come back to Asgard.
 
-## Baldur from the command line
+## The asgard command
 
-Baldur's window opens from its tile. Everything Baldur does also works from Command Prompt. In the packaged build, `cd` to its `apps\baldur` folder instead; `baldur.cmd` uses the build's own `asgard-cli.exe`, and every command below works the same:
+Every app, and Asgard's own upkeep, runs from one command in any Command Prompt or PowerShell window:
 
 ```
-cd /d "%LOCALAPPDATA%\Asgard\app\apps\baldur"
-baldur.cmd setup --from-git --project PROJ --root C:\src
-baldur.cmd collect
-baldur.cmd estimate
-baldur.cmd days
-baldur.cmd report 2026-10-01
-baldur.cmd approve --date 2026-10-01
+asgard --help                      the apps and Asgard's own commands
+asgard <app> --help                that app's commands (baldur, heimdall, odin, ysildir)
+asgard <app> <command> [args]      for example: asgard baldur collect
+asgard <command> [args]            muninn, install, uninstall, version, selftest, ui
+```
+
+Setup writes `asgard.cmd` into `%LOCALAPPDATA%\Asgard\bin` and adds that folder to your own Path (no admin rights; the machine Path isn't touched). Open a new terminal after setup to pick it up. If your Path couldn't be changed, setup says so, and `"%LOCALAPPDATA%\Asgard\bin\asgard.cmd"` works by its full path. In the packaged build, `asgard-cli.exe` in `%LOCALAPPDATA%\Asgard\app` takes the same commands (`asgard-cli.exe baldur collect`).
+
+The older forms still work, so scheduled tasks and AI client settings made before keep running: `baldur.cmd`, `odin.cmd`, `heimdall.cmd` and `ysildir.cmd` in each app's folder, `Asgard.pyw --muninn ...` and `Asgard.pyw --uninstall`.
+
+## Baldur from the command line
+
+Baldur's window opens from its tile. Everything Baldur does also works from the [`asgard` command](#the-asgard-command), in any folder:
+
+```
+asgard baldur setup --from-git --project PROJ --root C:\src
+asgard baldur collect
+asgard baldur estimate
+asgard baldur days
+asgard baldur report 2026-10-01
+asgard baldur approve --date 2026-10-01
 ```
 
 - `setup` records your git email in Muninn (only your email decides which commits are yours), the Jira projects you work in, and the folders your repositories are in. Run it alone to see what's still missing. If you commit with more than one email (one set per folder with `includeIf`, say), add each with `--email`.
-- `collect` reads your commits and each repository's reflog into Muninn: metadata only, never code. Git deletes reflog entries after 90 days, or 30 for commits no longer on any branch (such as ones a rebase replaced), so collect at least weekly; `baldur.cmd schedule` adds a weekly task for you, with no admin rights.
+- `collect` reads your commits and each repository's reflog into Muninn: metadata only, never code. Git deletes reflog entries after 90 days, or 30 for commits no longer on any branch (such as ones a rebase replaced), so collect at least weekly; `asgard baldur schedule` adds a weekly task for you, with no admin rights.
 - `estimate` turns the last 14 days into one proposal per ticket per day. `report` shows a day with the basis of every number. Nothing reaches Jira until you `approve` it, and only Odin posts.
 - `keys SHA PROJ-123` gives a commit a Jira key by hand, and `repos --off NAME` leaves a repository out of estimates.
 - `setup --set github_api=github.agency.gov` names your GitHub Enterprise Server (the host is enough; `github.com` works too). Only remotes on that host count as GitHub repositories, and the squash commits it writes are skipped as copies. Pull request alerts aren't built yet.
@@ -79,12 +93,12 @@ Baldur's settings start as guesses. To measure them, note your real hours during
 to four weeks:
 
 ```
-baldur.cmd actual 2026-10-01 6h15m
-baldur.cmd actual 2026-10-01 1h45m --key PROJ-42
-baldur.cmd actual 2026-10-01 --remove
-baldur.cmd actuals
-baldur.cmd calibrate
-baldur.cmd calibrate --accept
+asgard baldur actual 2026-10-01 6h15m
+asgard baldur actual 2026-10-01 1h45m --key PROJ-42
+asgard baldur actual 2026-10-01 --remove
+asgard baldur actuals
+asgard baldur calibrate
+asgard baldur calibrate --accept
 ```
 
 - `actual 2026-10-01 6h15m` records a day's total. Add `--key PROJ-42` to record one ticket's time
@@ -110,22 +124,22 @@ sources.
 the agent records its estimate of your working time on it:
 
 ```
-baldur.cmd ai record --agent kiro --minutes 1h --low 45m --confidence medium --commit <SHA> --key PROJ-42 --summary "One sentence."
-baldur.cmd ai list
-baldur.cmd ai withdraw r12
+asgard baldur ai record --agent kiro --minutes 1h --low 45m --confidence medium --commit <SHA> --key PROJ-42 --summary "One sentence."
+asgard baldur ai list
+asgard baldur ai withdraw r12
 ```
 
-To teach Kiro to do this in a repository, run `baldur.cmd ai kiro --into C:\src\my-service`. That
+To teach Kiro to do this in a repository, run `asgard baldur ai kiro --into C:\src\my-service`. That
 writes a steering file and two hooks into the repository's `.kiro` folder. One hook blocks the
-agent from approving, rejecting or changing your time. `baldur.cmd ai guide` prints the full
+agent from approving, rejecting or changing your time. `asgard baldur ai guide` prints the full
 guide for any agent.
 
 **An AI review of the day.** Paste the day's evidence into your approved AI chat, then give
 Baldur its answer:
 
 ```
-baldur.cmd ai pack 2026-10-01 --out pack.txt
-baldur.cmd ai review 2026-10-01 answer.json
+asgard baldur ai pack 2026-10-01 --out pack.txt
+asgard baldur ai review 2026-10-01 answer.json
 ```
 
 The review needs `setup --set review_mode=metadata` first. That sends commit subjects, times, line
@@ -134,8 +148,8 @@ counts and keys to the chat, never code.
 **Seeing and taking the figures.**
 
 ```
-baldur.cmd ai show 2026-10-01
-baldur.cmd approve --date 2026-10-01 --ai 3f2a9c1d
+asgard baldur ai show 2026-10-01
+asgard baldur approve --date 2026-10-01 --ai 3f2a9c1d
 ```
 
 - `ai show` lists the suggestions, what Odin's worklog comment will say for each, and the command
@@ -151,33 +165,33 @@ time git doesn't show, and time Jira already holds for a ticket never moves (Odi
 back out of Jira). Nothing changes until you approve. When you take a figure, Odin's worklog
 comment says so, in exactly the words `ai show` showed you.
 
-`baldur.cmd` tries `py -3`, then `py`, then `python`. If your computer blocks `.cmd` files, run `py -3 cli.py` (or `python cli.py`) from the same folder instead. Settings are in `%LOCALAPPDATA%\Asgard\settings\baldur.json`; the Baldur spec explains each one.
+If your computer blocks `.cmd` files, run `py -3 "%LOCALAPPDATA%\Asgard\app\asgard\cli.py" baldur ...` instead (`baldur.cmd`, and `py -3 cli.py` in Baldur's folder, also still work). Settings are in `%LOCALAPPDATA%\Asgard\settings\baldur.json`; the Baldur spec explains each one.
 
 ## Odin: meetings and Jira
 
 Odin is the only app that writes to Jira. Every weekday it turns the meetings you attended into Jira sub-tasks under the issues you choose and logs their time, reads your Jira issues and worklogs into Muninn for the other apps, and posts the days you approved in Baldur. It never edits or deletes anything in Jira, and re-running it never makes a sub-task or a worklog twice.
 
-1. **Set it up.** Click the Odin tile and choose **Create settings**: set `jira.base_url` and `jira.default_parent` (the issue your meeting sub-tasks go under), and review the filters and rules. Then paste a Jira personal access token (your Jira profile, Personal Access Tokens) and choose **Check the setup**. On the command line it's `odin setup`, in `%LOCALAPPDATA%\Asgard\app\apps\odin`.
-2. **Try it.** **Preview** (`odin preview`) shows what the daily run would create and post, and changes nothing.
-3. **Run it.** **Run now** (`odin`), or every weekday on its own: `odin schedule` registers the "Asgard Odin daily" task, shortly after your working day ends. The first run also reads a year of your Jira issues and worklogs, so it takes longer.
+1. **Set it up.** Click the Odin tile and choose **Create settings**: set `jira.base_url` and `jira.default_parent` (the issue your meeting sub-tasks go under), and review the filters and rules. Then paste a Jira personal access token (your Jira profile, Personal Access Tokens) and choose **Check the setup**. On the command line it's `asgard odin setup`.
+2. **Try it.** **Preview** (`asgard odin preview`) shows what the daily run would create and post, and changes nothing.
+3. **Run it.** **Run now** (`asgard odin`, with no command), or every weekday on its own: `asgard odin schedule` registers the "Asgard Odin daily" task, shortly after your working day ends. The first run also reads a year of your Jira issues and worklogs, so it takes longer.
 
-Other commands: `odin status` (the last run, recent sub-tasks, what waits), `odin sync` (Jira into Muninn only), `odin post` (approved Baldur days only; `post --dry-run` lists them), `odin csv FILE` (from an Outlook CSV export instead of Outlook), `odin report` (every sub-task as a CSV for Power BI), `odin doctor` (what this computer allows), `odin settle` (posts Odin sent but never heard back about: `odin settle ID` asks Jira again, and `--posted WORKLOG` or `--not-posted` records what you found in Jira yourself), `odin cli forget PROJ-123` (push that meeting again: delete the sub-task in Jira first, or the next run finds it and records it again). A hidden run that fails leaves `ATTENTION-Odin.txt` on your Desktop until a run works again.
+Other commands: `asgard odin status` (the last run, recent sub-tasks, what waits), `asgard odin sync` (Jira into Muninn only), `asgard odin post` (approved Baldur days only; `post --dry-run` lists them), `asgard odin csv FILE` (from an Outlook CSV export instead of Outlook), `asgard odin report` (every sub-task as a CSV for Power BI), `asgard odin doctor` (what this computer allows), `asgard odin settle` (posts Odin sent but never heard back about: `asgard odin settle ID` asks Jira again, and `--posted WORKLOG` or `--not-posted` records what you found in Jira yourself), `asgard odin cli forget PROJ-123` (push that meeting again: delete the sub-task in Jira first, or the next run finds it and records it again). A hidden run that fails leaves `ATTENTION-Odin.txt` on your Desktop until a run works again.
 
-Moving from an older Odin: your config, token and logs move from `%LOCALAPPDATA%\odin` (or `%LOCALAPPDATA%\meeting2jira`, if you go back that far) to `%LOCALAPPDATA%\Asgard\odin` the first time Odin runs, and its record of which meetings have sub-tasks (`state.db`) moves into Muninn on the first real run, so nothing is created again. `odin schedule` replaces the old `meeting2jira-daily` task. How it works, and what protects Jira: [docs/integration/odin.md](docs/integration/odin.md).
+Moving from an older Odin: your config, token and logs move from `%LOCALAPPDATA%\odin` (or `%LOCALAPPDATA%\meeting2jira`, if you go back that far) to `%LOCALAPPDATA%\Asgard\odin` the first time Odin runs, and its record of which meetings have sub-tasks (`state.db`) moves into Muninn on the first real run, so nothing is created again. `asgard odin schedule` replaces the old `meeting2jira-daily` task. How it works, and what protects Jira: [docs/integration/odin.md](docs/integration/odin.md).
 
 ## Ysildir: Asgard for your AI client
 
-Ysildir is an MCP server: an AI client (Kiro, Copilot agent mode in VS Code, Claude Code) starts it and gets tools that teach it Baldur and Muninn, take its estimates of your time into Baldur, and answer questions from Muninn. It never approves, changes or posts anything; it gives you the command instead. It needs Python 3.10+ and the MCP SDK (`mcp` and `pydantic` from `requirements.txt`, with IT's approval of their compiled parts). Without them, `ysildir.cmd` says what's missing, and agents still use `baldur.cmd ai record` and the clipboard review. The packaged build has both already: `ysildir.cmd setup` there points your AI client at the build's `asgard-cli.exe`.
+Ysildir is an MCP server: an AI client (Kiro, Copilot agent mode in VS Code, Claude Code) starts it and gets tools that teach it Baldur and Muninn, take its estimates of your time into Baldur, and answer questions from Muninn. It never approves, changes or posts anything; it gives you the command instead. It needs Python 3.10+ and the MCP SDK (`mcp` and `pydantic` from `requirements.txt`, with IT's approval of their compiled parts). Without them, `asgard ysildir` says what's missing, and agents still use `asgard baldur ai record` and the clipboard review. The packaged build has both already. `asgard ysildir setup` writes `asgard ysildir serve` into your AI client's settings, with the program's full path (the build's `asgard-cli.exe`, or the Python that ran setup): a client can't start a `.cmd` reliably, and may not see a Path change until it restarts. Settings written before, which start `apps\ysildir\cli.py serve`, keep working.
 
 ```
-ysildir.cmd setup --kiro C:\src\my-service     connect Kiro in that workspace (--vscode DIR, --claude DIR,
+asgard ysildir setup --kiro C:\src\my-service  connect Kiro in that workspace (--vscode DIR, --claude DIR,
                                                --kiro-user, --vscode-user; --print shows it first)
-ysildir.cmd check                              what an agent will see: tools, switches, Muninn's version
-ysildir.cmd tools                              each tool, on or off, and what it sends to the AI client
-ysildir.cmd tools --on baldur_day              turn a tool on, then restart the MCP server in your client
+asgard ysildir check                           what an agent will see: tools, switches, Muninn's version
+asgard ysildir tools                           each tool, on or off, and what it sends to the AI client
+asgard ysildir tools --on baldur_day           turn a tool on, then restart the MCP server in your client
 ```
 
-Ysildir's tile opens its page in Asgard's window: whether the SDK is installed, every tool with what it sends and a switch for it, the `setup` command for each client, and a button that runs `ysildir check`.
+Ysildir's tile opens its page in Asgard's window: whether the SDK is installed, every tool with what it sends and a switch for it, the `setup` command for each client, and a button that runs `asgard ysildir check`.
 
 Each tool's data flow needs your ISSO's approval, so each has a switch in `%LOCALAPPDATA%\Asgard\settings\ysildir.json`. Tools that send Muninn data (commit subjects, Jira summaries, times) start off. [docs/integration/ysildir.md](docs/integration/ysildir.md) lists every tool, what it sends and its command-line equivalent.
 
@@ -192,7 +206,7 @@ python tools\fake_jira_server.py --state jira.json   # keep what Odin creates ac
 
 It listens on 127.0.0.1 only, needs the token it prints, and serves what Odin asks for: issues, JQL
 search, worklogs and transitions. Paste the config it shows into `%LOCALAPPDATA%\Asgard\odin\config.json`,
-set `JIRA_PAT` to the token, then `odin check`, `odin preview` and `odin push` all work against it.
+set `JIRA_PAT` to the token, then `asgard odin check`, `asgard odin preview` and `asgard odin push` all work against it.
 It is a development tool: it isn't Jira, and it isn't in the packaged build.
 
 ## Heimdall from the command line
@@ -200,29 +214,56 @@ It is a development tool: it isn't Jira, and it isn't in the packaged build.
 Heimdall fills a security change request in Edge from a saved template, then stops so you can review it and click **Submit** yourself. Its tile opens Heimdall's window (see below), which does everything these commands do; the commands also work on their own:
 
 ```
-cd /d "%LOCALAPPDATA%\Asgard\app\apps\heimdall"
-heimdall.cmd init
-heimdall.cmd fields
-heimdall.cmd template save "Monthly scan" --set "Short description=Monthly scan $today" --set "Category=Hardware" --attachment C:\Reports\scan.xlsx
-heimdall.cmd fill -t "Monthly scan" --dry-run
-heimdall.cmd fill -t "Monthly scan"
+asgard heimdall init
+asgard heimdall fields
+asgard heimdall template save "Monthly scan" --set "Short description=Monthly scan $today" --set "Category=Hardware" --attachment C:\Reports\scan.xlsx
+asgard heimdall fill -t "Monthly scan" --dry-run
+asgard heimdall fill -t "Monthly scan"
 ```
 
 - `init` creates the form file, `%LOCALAPPDATA%\Asgard\settings\heimdall.json`, from the example. Edit it once to match the security change form: `instance_url`, the catalog item's `catalog_sys_id` (the 32 characters after `sysparm_id=` or `sys_id=` in its address), and one entry per field with its label exactly as the form shows it and its `kind`: `text`, `select`, `reference` or `checkbox`. A field can also have `"required": true`, a `default`, or a `selector` when its label isn't enough to find it. `fields` shows what Heimdall read.
 - **Templates** are saved combinations of values for those fields. `template save NAME --set "LABEL=VALUE"` creates one; `template list`, `show`, `edit` (`--set`, `--unset`, `--attachment`, `--no-attachment`, `--rename`) and `delete` manage them. Names and labels ignore capitals. Checkboxes take `true` or `false`. Values may use `$today` (2026-10-04) or `$today_us` (10/04/2026); write `$$` for a dollar sign. In PowerShell, put such values in single quotes, or PowerShell replaces `$today` before Heimdall sees it.
 - `fill` uses, for each field, the form's default, then the template's value, then any `--set` you add for this run. A field with no value anywhere is left as it is. `--attachment` or `--no-attachment` changes the attachment for this run only, and `--dry-run` shows the plan without opening Edge.
+- **Variables** let a template ask for details each time it's used. Write `{NAME:FORMAT(...):"Friendly name"}` in a field's value; the friendly name is what people see, and the brackets and the friendly name are optional. `{NAME}` on its own repeats a variable defined elsewhere in the template, and `{{` or `}}` is a literal brace.
+
+  | Format | Asks for | Fills in |
+  | --- | --- | --- |
+  | `CHECKBOX("description")` | a checkbox, with the description beside it | `Yes` or `No` |
+  | `TEXTBOX('ip_v4', 'ip_v6', 'string', 'bool', 'int', 'float')` | typed text, checked against any one of the checks listed (none means any text) | the text as typed |
+  | `DROPDOWN('prod', 'test')` | one of the values listed | that value |
+  | `LIBRARY('ip_library_12')` | an entry from a library, searched by name or description | the entry's value, or its name (see below) |
+
+  ```
+  asgard heimdall template save "Firewall access" --set "Short description=We need access to {SYSTEM_NAME:TEXTBOX('string'):'System Name'} from {SRC_ADDR:LIBRARY('ip_library_12'):'Source'} to {DEST_ADDR:LIBRARY('ip_library_12'):'Destination'}."
+  asgard heimdall template show "Firewall access"
+  asgard heimdall fill -t "Firewall access" --var "SYSTEM_NAME=Payroll" --var "SRC_ADDR=web-servers" --var "DEST_ADDR=db-servers"
+  ```
+
+  Every variable except a checkbox needs a value, and a fill stops naming every one that's missing. Values go into the form exactly as typed, so `$5` or `{x}` in a value is never misread. `ip_v4` and `ip_v6` take one address, not a range (`10.0.0.0/24` is refused). Templates saved before variables existed keep any braces they had as plain text.
+- **Libraries** are the lists `LIBRARY('name')` picks from, such as a firewall's address groups. Whoever looks after a list publishes it as a JSON file, and `library import FILE` keeps a copy; importing it again updates it. `library list`, `library show NAME --search TEXT` and `library remove NAME` manage them.
+
+  ```
+  {"library": "ip_library_12", "description": "Data centre address groups", "version": "2026-10-01",
+   "renders": "value",
+   "entries": [{"name": "web-servers", "value": "10.20.0.0/24", "description": "DMZ web tier"},
+               {"name": "db-servers", "value": ["10.30.0.5", "10.30.0.6"]}]}
+  ```
+
+  `entries` may also be an object of name to value, and a list value fills in as its items separated by `, `. With `"renders": "name"` a pick fills in the entry's name, and Heimdall doesn't keep the values at all. Use that for lists whose values people shouldn't see.
+
+  **What the encryption does.** Heimdall keeps each library in `%LOCALAPPDATA%\Asgard\heimdall\libraries`, encrypted with Windows DPAPI for your Windows account. That stops other accounts, other computers and backups from reading it. It does not stop you, or a program running as you, from decrypting it. Heimdall lists and searches entries by name and description only, and shows a value only for an entry someone picked, because that value is about to be typed into a form they review. A list whose values must stay hidden needs `"renders": "name"`. Delete the published file after importing it, since that copy isn't encrypted. Off Windows there's no DPAPI, so libraries are refused unless `HEIMDALL_UNPROTECTED_LIBRARIES=1` asks Heimdall to store them unencrypted, for trying it out. Windows ignores that setting.
 - **What a fill does.** Heimdall opens Edge with its own profile and signs in the normal way: pick your certificate and enter your PIN if Edge asks. After the first time, the profile usually keeps you signed in. It opens the catalog item, fills each field, checks that each value took, attaches the file, and brings Edge to the front. Review the form, click **Submit**, then close the window.
 - **What it never does.** It never clicks Submit, and it never reads, copies or stores your session, cookies or tokens; they stay in Heimdall's Edge profile.
 - **When it stops.** Heimdall stops with a message instead of guessing: a template that names a field the form no longer has, a required field with no value, a missing attachment, a label that matches no field or two fields, or a field that didn't keep its value. If two fields share a label, give one a `selector` in the form file.
 - **If the form won't open,** run `fill --trace` and open the trace with `playwright show-trace`. The trace holds your session and screenshots of the form; delete it afterwards and don't share it. Set `"ui": "portal"` in the form file to use the Service Portal page instead of the classic form.
 
-`fill` needs **Playwright for Python**, installed for the same Python that `heimdall.cmd` finds, and Edge's `RemoteDebuggingAllowed` policy must not be off (check `edge://policy`). Playwright runs a bundled `node.exe`, so if your computer only allows programs from approved folders, ask IT to install it in one. Every other command works without Playwright. `heimdall.cmd` finds Python the same way `baldur.cmd` does; if `.cmd` files are blocked, run `py -3 cli.py` from the same folder. Add `--json` to `fields`, `template list`, `template show` or `fill --dry-run` for output a program can read.
+`fill` needs **Playwright for Python**, installed for the same Python Asgard runs on, and Edge's `RemoteDebuggingAllowed` policy must not be off (check `edge://policy`). Playwright runs a bundled `node.exe`, so if your computer only allows programs from approved folders, ask IT to install it in one. Every other command works without Playwright. If `.cmd` files are blocked, run `py -3 "%LOCALAPPDATA%\Asgard\app\asgard\cli.py" heimdall ...` (`heimdall.cmd` in Heimdall's folder also still works). Add `--json` to `fields`, `template list`, `template show`, `library list`, `library show` or `fill --dry-run` for output a program can read.
 
 ## The shared window
 
 Heimdall's tile opens Asgard's shared window: a sidebar with **Dashboard**, the app's own pages and **Settings**. Every app that adds pages uses the same window, so they look and work alike. `py -3 -m asgard.ui` (run from `%LOCALAPPDATA%\Asgard\app`) opens one window with every app's pages.
 
-- **Heimdall's pages.** **Templates** lists your templates; pick one to see each field's value and where it comes from, then **Fill in Edge**, **Dry run**, **Edit** or **Delete**. **New template** shows every field on the form; leave a field empty to leave it as it is. A fill runs `heimdall fill` in the background and shows its progress; **Stop** ends it. **Form** shows what Heimdall read from the form file and can create it the first time.
+- **Heimdall's pages.** **Templates** lists your templates; pick one to see each field's value and where it comes from, then **Fill in Edge**, **Dry run**, **Edit** or **Delete**. A template with variables shows **This template asks for** above the buttons: a text box, a checkbox, a list to choose from, or a library search (type, then pick an entry) for each one. **New template** shows every field on the form; leave a field empty to leave it as it is. A fill runs `heimdall fill` in the background and shows its progress; **Stop** ends it. **Form** shows what Heimdall read from the form file and can create it the first time, and its **Libraries** card imports, lists and removes libraries.
 - **Dashboard** shows a card for each thing that needs you (templates that need fixing, a form not set up yet, Muninn's counts). Click one to go there.
 - **Settings** has Light, Dark or Match Windows, text size, and an accent colour for each app. Changes apply straight away. Text in an accent colour is adjusted if needed so it stays readable. Settings also lists each app's settings files with **Open** buttons.
 - **Keys.** Tab moves between controls, Enter or Space opens a sidebar page, Alt+Left goes back, F5 reloads the page.
@@ -285,29 +326,30 @@ Paths can use `{app}` (Asgard's code folder), `{data}` (Asgard's data folder) an
 
 ## Looking after Muninn
 
-Asgard checks Muninn each time it starts. It backs it up once a day and tidies it: it refreshes statistics, folds the write-ahead log in, and rebuilds a damaged search index. If the file itself is damaged, Asgard says so and names the newest backup. From a console, in `%LOCALAPPDATA%\Asgard\app`, using `python.exe` (`pythonw.exe` prints nothing). In the packaged build, run the same commands in its folder as `asgard-cli.exe --muninn status` and so on:
+Asgard checks Muninn each time it starts. It backs it up once a day and tidies it: it refreshes statistics, folds the write-ahead log in, and rebuilds a damaged search index. If the file itself is damaged, Asgard says so and names the newest backup. From any console:
 
 ```
-python Asgard.pyw --muninn prepare           create Muninn or bring it up to date, as opening Asgard does
-python Asgard.pyw --muninn status            version, sizes, backups, last housekeeping
-python Asgard.pyw --muninn check             look for damage and anything that should never happen (exit 1 if found)
-python Asgard.pyw --muninn repair            rebuild the search index, put back missing protections
-python Asgard.pyw --muninn backup            a copy now
-python Asgard.pyw --muninn restore [FILE]    put a backup back (the newest if FILE is left out); close every app first
-python Asgard.pyw --muninn retention on|off  prune old run records daily (off until you confirm the periods)
+asgard muninn prepare                        create Muninn or bring it up to date, as opening Asgard does
+asgard muninn status                         version, sizes, backups, last housekeeping
+asgard muninn check                          look for damage and anything that should never happen (exit 1 if found)
+asgard muninn repair                         rebuild the search index, put back missing protections
+asgard muninn backup                         a copy now
+asgard muninn restore [FILE]                 put a backup back (the newest if FILE is left out); close every app first
+asgard muninn retention on|off               prune old run records daily (off until you confirm the periods)
 ```
 
-[docs/muninn-operations.md](docs/muninn-operations.md) explains each message and what to do about it.
+`python Asgard.pyw --muninn status` in `%LOCALAPPDATA%\Asgard\app` (or `asgard-cli.exe --muninn status` in the packaged build) still works too. [docs/muninn-operations.md](docs/muninn-operations.md) explains each message and what to do about it.
 
 ## Uninstall
 
-Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, or **... > Uninstall Asgard**. Valhalla removes what setup recorded: the app folder, the shortcuts and the Settings entry. It asks before deleting your data (tile settings, logs, the Muninn database and its backups). It also removes Baldur's and Odin's scheduled tasks. It never deletes anything outside Asgard's own folders, and it doesn't touch apps you pointed a tile at elsewhere. In the packaged build, Windows can't delete Asgard's programs while they run, so the app folder goes a moment after Asgard closes.
+Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, **... > Uninstall Asgard**, or `asgard uninstall` (`--yes` to skip the questions, `--purge` to delete your data too). Valhalla removes what setup recorded: the app folder, the shortcuts, the Settings entry, and the `asgard` command with its Path entry. It asks before deleting your data (tile settings, logs, the Muninn database and its backups). It also removes Baldur's and Odin's scheduled tasks. It never deletes anything outside Asgard's own folders, and it doesn't touch apps you pointed a tile at elsewhere. In the packaged build, Windows can't delete Asgard's programs while they run, so the app folder goes a moment after Asgard closes.
 
 ## Where things live
 
 | Path | What |
 | --- | --- |
 | `%LOCALAPPDATA%\Asgard\app` | The installed copy, replaced on upgrade: Asgard's code, and in the packaged build its programs and Python too |
+| `%LOCALAPPDATA%\Asgard\bin\asgard.cmd` | The `asgard` command; setup adds `bin` to your own Path, and Valhalla takes it out |
 | `%LOCALAPPDATA%\Asgard\apps.local.json` | Your tile settings |
 | `%LOCALAPPDATA%\Asgard\logs` | One log per app, plus `launcher.log` |
 | `%LOCALAPPDATA%\Asgard\muninn.db` | Muninn, the database the apps share (with `-wal` and `-shm` files beside it) |
@@ -315,10 +357,11 @@ Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, or **... > 
 | `%LOCALAPPDATA%\Asgard\muninn.before-restore-*.db` | The database as it was before a restore, kept so the restore can be undone |
 | `%LOCALAPPDATA%\Asgard\install-ledger.json` | What setup created, so Valhalla can undo it |
 | `%LOCALAPPDATA%\Asgard\settings\baldur.json` | Baldur's settings |
-| `%LOCALAPPDATA%\Asgard\settings\ysildir.json` | Which Ysildir tools your AI client may use (`ysildir.cmd tools`). No file means the defaults; a file Ysildir can't read leaves only `asgard_guide` on |
+| `%LOCALAPPDATA%\Asgard\settings\ysildir.json` | Which Ysildir tools your AI client may use (`asgard ysildir tools`). No file means the defaults; a file Ysildir can't read leaves only `asgard_guide` on |
 | `%LOCALAPPDATA%\Asgard\settings\ui.json` | Your choices for the shared window: mode, text size, colours |
 | `%LOCALAPPDATA%\Asgard\settings\heimdall.json` | Heimdall's form file: the security change catalog item and its fields |
-| `%LOCALAPPDATA%\Asgard\settings\heimdall-templates.json` | Your Heimdall templates. Heimdall won't overwrite this file if it can't read it |
+| `%LOCALAPPDATA%\Asgard\settings\heimdall-templates.json` | Your Heimdall templates. Heimdall won't overwrite this file if it can't read it. It's version 2 since template variables; Heimdall reads version 1 and writes version 2 the next time you change a template, so an older Heimdall can't read it after that |
+| `%LOCALAPPDATA%\Asgard\heimdall\libraries` | The libraries Heimdall imported, one `.library` file each, encrypted with DPAPI for your Windows account |
 | `%LOCALAPPDATA%\Asgard\odin` | Odin's files: `config.json`, its DPAPI-protected Jira token, logs, calendar exports, `last_run.json`; its records are in Muninn. Odin moves its old `%LOCALAPPDATA%\meeting2jira` here the first time it runs, and keeps the old `state.db` as `state.db.migrated-DATE` for 30 days |
 | `%LOCALAPPDATA%\Asgard\heimdall\edge-profile` | The Edge profile Heimdall signs in with; delete it to sign out. Traces from `--trace` go in `heimdall\traces` |
 

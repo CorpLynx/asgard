@@ -30,19 +30,24 @@ from asgard import paths
 from . import Refused
 from .config import Config
 
-CLI = Path(__file__).resolve().parent.parent / "cli.py"
+ASGARD_COMMAND = paths.CODE_ROOT / "asgard" / "cli.py"     # asgard ysildir serve: what a client starts
 NAME = "ysildir"
 
 
 def launch() -> Tuple[str, List[str]]:
-    """The command and arguments an AI client runs to start Ysildir.
+    """The command and arguments an AI client runs to start Ysildir: asgard ysildir serve.
 
-    In the packaged build that's its console program, asgard-cli.exe, which runs cli.py as Python
-    would (stdio needs a console program, never the windowless Asgard.exe).
+    It names the program by its full path, never asgard.cmd or a bare `asgard` (decided Oct 11):
+    Node-based clients (VS Code, Kiro, Claude Code) can't start a .cmd without a shell, a batch file
+    between the client and Ysildir can stop stdio on Ctrl+C with "Terminate batch job (Y/N)?", and a
+    client that was already open hasn't seen the Path setup added. In the packaged build the program
+    is its console program, asgard-cli.exe (stdio needs a console program, never the windowless
+    Asgard.exe); otherwise it's the Python running setup, which has the MCP SDK. Entries written
+    before, which run apps\\ysildir\\cli.py serve, keep working: that file is still there.
     """
     if paths.FROZEN:
-        return paths.frozen_programs()[0], [str(CLI), "serve"]
-    return sys.executable, [str(CLI), "serve"]
+        return paths.frozen_programs()[0], ["ysildir", "serve"]
+    return sys.executable, [str(ASGARD_COMMAND), "ysildir", "serve"]
 
 
 def auto_approve(config: Config, read_only: List[str]) -> List[str]:

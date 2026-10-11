@@ -640,7 +640,7 @@ class ScheduleTests(CliCase):
         self.assertEqual(cmd[:11], ["schtasks", "/Create", "/F", "/SC", "WEEKLY", "/D", "TUE", "/ST", "08:30", "/IT",
                                     "/TN"])
         self.assertEqual(cmd[11], "Asgard Baldur collect")
-        self.assertEqual(cmd[-1], f'"{self.dir / "pythonw.exe"}" "{cli.ENTRY}" collect --quiet')
+        self.assertEqual(cmd[-1], f'"{self.dir / "pythonw.exe"}" "{cli.ASGARD_COMMAND}" baldur collect --quiet')
         self.assertEqual(cli.schedule_command("MON", "09:00", remove=True),
                          ["schtasks", "/Delete", "/F", "/TN", "Asgard Baldur collect"])
         with self.assertRaisesRegex(cli.CliError, "261 characters"):

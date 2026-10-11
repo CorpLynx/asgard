@@ -221,6 +221,13 @@ def smoke(python: Path, bundle: Path = BUNDLE) -> None:
             say("     skipped: Baldur from setup to estimate (git isn't on PATH)")
         check(bundle / "apps" / "ysildir" / "cli.py", "check", contains="baldur_record_estimate")
         check(bundle / "apps" / "heimdall" / "cli.py", "--help", contains="usage")
+        # The asgard command (issue #10), through the build's own program: asgard-cli.exe ARGS.
+        check(contains="usage: asgard <app> <command>", expect=2)
+        check("version", contains="Packaged build")
+        check("muninn", "status", contains="Schema")
+        check("baldur", "--help", contains="usage")
+        check("ysildir", "check", contains="baldur_record_estimate")
+        check("no-such-app", expect=2, contains="no app or command")
         # Odin's meeting push as far as it goes without Jira: config, CSV, rules, and Muninn (a dry run).
         odin_dir = Path(tmp) / "odin"
         odin_dir.mkdir()

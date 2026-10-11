@@ -8,6 +8,10 @@ setup start Asgard's scripts exactly as they would with pythonw.exe and python.e
     asgard-cli.exe SCRIPT.py [ARGS]         one of Asgard's scripts, as python SCRIPT.py ARGS would
     asgard-cli.exe --self-test              check that every part of the build loads on this computer
                                             (--skip Qt,Tk leaves parts out, for a machine without them)
+    asgard-cli.exe [ARGS]                   anything else: the asgard command (asgard/cli.py), so
+                                            asgard-cli.exe baldur collect is asgard baldur collect
+    Asgard.exe baldur collect --quiet       an app or Asgard command as the first word: the asgard
+                                            command too, with no console (Baldur's scheduled task)
 
 Asgard's own code isn't frozen into the programs. It ships as .py files beside them, at the same
 layout as an installed copy, so every path it works out from __file__ (prompts, QML, migrations)
@@ -187,11 +191,50 @@ def self_test(out: Callable[[str], None] = print, skip: Sequence[str] = ()) -> i
     return 1 if failed else 0
 
 
+# The first words the asgard command knows (asgard/cli.py: its apps, its commands and help). Kept here
+# so this entry point decides without importing Asgard's code first.
+DISPATCH_WORDS = ("baldur", "heimdall", "odin", "ysildir", "muninn", "install", "uninstall", "version",
+                  "selftest", "ui", "help", "-h", "--help", "/?", "--version", "-v")
+LAUNCHER_OPTIONS = ("--uninstall", "--muninn")     # Asgard.pyw's own: Settings > Apps runs these
+
+
+def console_program(executable: Optional[str] = None) -> bool:
+    """Whether this is asgard-cli.exe (a console, like python), not Asgard.exe (no console, like pythonw)."""
+    return Path((executable or sys.executable).replace("\\", "/")).stem.lower() == "asgard-cli"
+
+
+def dispatches(args: Sequence[str], console: bool) -> bool:
+    """Whether a command line goes to the asgard command rather than to a script or the launcher.
+
+    asgard-cli.exe sends it everything that isn't a script or one of the launcher's own options:
+    with nothing after it, that's the asgard command's help. Asgard.exe opens the launcher unless the
+    first word is one the asgard command knows, so a scheduled task can run an app without a console.
+    """
+    if args and args[0].lower().endswith(SCRIPT_SUFFIXES):
+        return False
+    if any(a in LAUNCHER_OPTIONS for a in args[:1]) or "--uninstall" in args:
+        return False
+    if console:
+        return True
+    return bool(args) and args[0].lower() in DISPATCH_WORDS
+
+
+def dispatch(args: Sequence[str]) -> int:
+    """The asgard command, from the build's own copy of Asgard's code."""
+    root = str(bundle_root())
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from asgard import cli
+    return cli.main(list(args), selftest=self_test)
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args[:1] == ["--self-test"]:
         skip = args[2].split(",") if args[1:2] == ["--skip"] and len(args) > 2 else []
         return self_test(skip=skip)
+    if dispatches(args, console_program()):
+        return dispatch(args)
     try:
         script, rest = resolve(args, bundle_root())
     except Refused as exc:

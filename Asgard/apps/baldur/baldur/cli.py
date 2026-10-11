@@ -30,7 +30,7 @@ from . import settings as config
 SCHEMA = (4, 5)     # 4: agent estimates, which the AI-assisted method reads and writes (v2, v3 and v5 need nothing)
 MAX_DAYS_BACK = 3650
 TASK_NAME = "Asgard Baldur collect"
-ENTRY = Path(__file__).resolve().parent.parent / "cli.py"
+ASGARD_COMMAND = paths.CODE_ROOT / "asgard" / "cli.py"     # asgard baldur ...: what the weekly task runs
 DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]+-[1-9][0-9]*$")
 
@@ -739,9 +739,11 @@ def schedule_command(day: str, at: str, remove: bool = False, python: Optional[s
     exe = Path(python or sys.executable)
     quiet = exe.with_name("pythonw.exe")
     exe = quiet if quiet.exists() else exe
-    if python is None and paths.FROZEN:        # the packaged build: Asgard.exe runs cli.py, no console
-        exe = Path(paths.frozen_programs()[1])
-    action = f'"{exe}" "{ENTRY}" collect --quiet'
+    # The asgard command (asgard/cli.py): asgard baldur collect, with no console window.
+    if python is None and paths.FROZEN:        # the packaged build: Asgard.exe takes the command itself
+        action = f'"{paths.frozen_programs()[1]}" baldur collect --quiet'
+    else:
+        action = f'"{exe}" "{ASGARD_COMMAND}" baldur collect --quiet'
     if len(action) > 261:
         raise CliError("The scheduled command would be longer than Windows allows (261 characters).")
     # /IT: run only while you're signed in, so no password is stored and no admin rights are needed.

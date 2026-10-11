@@ -1676,7 +1676,7 @@ class ParsingTests(unittest.TestCase):
         cmd = cli.schedule_command("MON", "09:00", python=sys.executable)
         self.assertEqual(cmd[:12], ["schtasks", "/Create", "/F", "/SC", "WEEKLY", "/D", "MON", "/ST", "09:00", "/IT",
                                     "/TN", cli.TASK_NAME])
-        self.assertTrue(cmd[-1].endswith('cli.py" collect --quiet'))
+        self.assertTrue(cmd[-1].endswith('cli.py" baldur collect --quiet'))
         self.assertEqual(cli.schedule_command("MON", "09:00", remove=True)[:2], ["schtasks", "/Delete"])
 
 

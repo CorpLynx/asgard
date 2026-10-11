@@ -1,6 +1,6 @@
 """Putting Baldur's agent files (steering and hooks) into a workspace's .kiro folder.
 
-    agents.install(Path("C:/src/my-service"))      # cli.py ai kiro --into C:\\src\\my-service
+    agents.install(Path("C:/src/my-service"))      # asgard baldur ai kiro --into C:\\src\\my-service
 
 The files come from apps/baldur/agents/ (see its README). Paths to this computer's Python and
 to the scripts are filled in at install time. A command starts with an unquoted launcher (py -3

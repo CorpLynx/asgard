@@ -3,7 +3,7 @@
 Baldur has two ways to estimate, side by side:
 - The manual engine (estimate.py): commits, checkouts and meetings in; minutes out. No AI.
 - The AI-assisted method (here). It never replaces the engine's numbers; it suggests figures
-  beside them, and you take them (cli.py approve --date D --ai ID, the id of the figures you were
+  beside them, and you take them (asgard baldur approve --date D --ai ID, the id of the figures you were
   shown) or leave them.
 
 Where an AI-assisted figure comes from, best first:
@@ -253,7 +253,7 @@ def agent_draft(est: E.Estimate, day: dt.date, baseline: Dict[str, int], reports
     for r in reports:
         if not r.intact:
             flags.append(f"{r.ref}'s commits were changed after it was recorded, so it isn't counted "
-                         "(Asgard.pyw --muninn check says more).")
+                         "(asgard muninn check says more).")
             continue
         if not r.cited:
             if r.local_date == day:
@@ -270,7 +270,7 @@ def agent_draft(est: E.Estimate, day: dt.date, baseline: Dict[str, int], reports
             if r.local_date == day:
                 for sha in missing:
                     flags.append(f"{r.ref} cites {sha[:12]}, which Baldur hasn't collected as one of your commits, "
-                                 f"so {r.ref} isn't counted until it has (run cli.py collect).")
+                                 f"so {r.ref} isn't counted until it has (run asgard baldur collect).")
                 for sha in many:
                     flags.append(f"{r.ref} cites {sha}, which matches more than one of your commits, so {r.ref} "
                                  "isn't counted; it needs more of the SHA.")
@@ -285,7 +285,7 @@ def agent_draft(est: E.Estimate, day: dt.date, baseline: Dict[str, int], reports
             covering.setdefault(c.sha, []).append(r)
             if not c.keys:
                 flags.append(f"{r.ref} covers {c.sha[:10]}, which has no Jira key; untracked time is never logged "
-                             f"(cli.py keys {c.sha[:10]} {r.key or 'PROJ-1'}).")
+                             f"(asgard baldur keys {c.sha[:10]} {r.key or 'PROJ-1'}).")
             elif r.key and r.key not in c.keys:
                 flags.append(f"{r.ref} names {r.key}, but {c.sha[:10]} counts toward {', '.join(c.keys)}.")
     target: Dict[str, float] = {}
@@ -427,10 +427,10 @@ def _check_mode(settings: Settings) -> None:
     mode = settings.review_mode
     if mode == "off":
         raise AssistError("AI review is off. It sends commit subjects, times and ticket keys (no code) to your AI "
-                          "tool, so turn it on once your ISSO agrees: cli.py setup --set review_mode=metadata")
+                          "tool, so turn it on once your ISSO agrees: asgard baldur setup --set review_mode=metadata")
     if mode == "content":
         raise AssistError("review_mode 'content' would send code to an AI tool, which Asgard doesn't do (rule 6: "
-                          "metadata only). Use: cli.py setup --set review_mode=metadata")
+                          "metadata only). Use: asgard baldur setup --set review_mode=metadata")
 
 
 def build_pack(con: sqlite3.Connection, settings: Settings, day: dt.date, inputs: store.Inputs, est: E.Estimate,
@@ -442,7 +442,7 @@ def build_pack(con: sqlite3.Connection, settings: Settings, day: dt.date, inputs
     if baseline is None:
         baseline = {k: int(r["minutes_proposed"]) for k, r in rows.items()}
     if not baseline:
-        raise AssistError(f"{day.isoformat()} has no open proposals to review. Run cli.py estimate first.")
+        raise AssistError(f"{day.isoformat()} has no open proposals to review. Run asgard baldur estimate first.")
     parts = sorted(est.parts_on(day), key=lambda x: x.start)
     sessions, commit_ids = [], []
     for n, x in enumerate(parts, 1):
@@ -525,11 +525,11 @@ def apply_reply(con: sqlite3.Connection, settings: Settings, day: dt.date, reply
     plan = store.plan(con, settings, est, day, day)
     if plan.would_change(day):
         raise AssistError(f"{day.isoformat()} has changed since it was estimated. Make a new pack: "
-                          f"cli.py ai pack {day.isoformat()}")
+                          f"asgard baldur ai pack {day.isoformat()}")
     pack = build_pack(con, settings, day, inputs, est, load_reports(con, day, day, inputs.commits))
     if data.get("pack") != pack["pack_hash"]:
         raise AssistError(f"This reply is for different evidence than {day.isoformat()} has now (pack "
-                          f"{data.get('pack')!r}, now {pack['pack_hash']}). Make a new pack: cli.py ai pack "
+                          f"{data.get('pack')!r}, now {pack['pack_hash']}). Make a new pack: asgard baldur ai pack "
                           f"{day.isoformat()}")
     clean_model = rules.clean_line(model, 60) if model else None
     meta = {"method": "review", "tier": tier, "model": clean_model, "prompt_version": pack["prompt_version"],
@@ -565,16 +565,16 @@ def approve_day(con: sqlite3.Connection, settings: Settings, day: dt.date,
     found = suggestions(con, settings, day, now)
     if found is None or not found.changed():
         raise AssistError(f"No AI-assisted figures for {day.isoformat()}: no agent estimates or AI review change it. "
-                          f"Approve the estimate instead: cli.py approve --date {day.isoformat()}")
+                          f"Approve the estimate instead: asgard baldur approve --date {day.isoformat()}")
     if not (shown or "").strip():
-        raise AssistError(f"Say which AI-assisted figures you're taking, by the id cli.py ai show "
+        raise AssistError(f"Say which AI-assisted figures you're taking, by the id asgard baldur ai show "
                           f"{day.isoformat()} gave them. Now they are {found.moves()}; to take those: "
-                          f"cli.py approve --date {day.isoformat()} --ai {found.digest()}")
+                          f"asgard baldur approve --date {day.isoformat()} --ai {found.digest()}")
     if shown.strip().lower() != found.digest():
         raise AssistError(f"The AI-assisted figures for {day.isoformat()} aren't the ones you were shown "
                           f"(id {rules.clean_line(shown, 20)}); now they are {found.moves()}. Check them "
-                          f"(cli.py ai show {day.isoformat()}), then approve with their id: "
-                          f"cli.py approve --date {day.isoformat()} --ai {found.digest()}")
+                          f"(asgard baldur ai show {day.isoformat()}), then approve with their id: "
+                          f"asgard baldur approve --date {day.isoformat()} --ai {found.digest()}")
     changed = {t.key: t for t in found.changed()}
     taken = {k: t.figure for k, t in changed.items() if k not in figures}
     gains = sorted(k for k in taken if changed[k].figure > changed[k].baseline)

@@ -31,11 +31,13 @@ without you. Logged time must be time actually spent.
 
 ## How to record
 
-Baldur's command line is `%LOCALAPPDATA%\Asgard\app\apps\baldur\baldur.cmd` (in the repository:
-`python Asgard/apps/baldur/cli.py`). With options, which is easiest from a terminal:
+Baldur's command line is `asgard baldur`, which works from any folder once Asgard's setup has put
+`asgard` on the person's Path (the older `baldur.cmd`, in `%LOCALAPPDATA%\Asgard\app\apps\baldur`, and
+`python Asgard/apps/baldur/cli.py` in the repository still work). With options, which is easiest from a
+terminal:
 
 ```
-baldur.cmd ai record --agent kiro --guide baldur-agent-2 --minutes 1h --low 45m --confidence medium --commit 9f3c1a2b4d5e6f708192a3b4c5d6e7f8091a2b3c --key PROJ-42 --summary "Added jittered retry to the poller and its tests." --json
+asgard baldur ai record --agent kiro --guide baldur-agent-2 --minutes 1h --low 45m --confidence medium --commit 9f3c1a2b4d5e6f708192a3b4c5d6e7f8091a2b3c --key PROJ-42 --summary "Added jittered retry to the poller and its tests." --json
 ```
 
 Or as JSON on standard input (PowerShell, works in Constrained Language Mode):
@@ -45,7 +47,7 @@ $report = @{ schema = "baldur.agent_estimate/1"; agent = "kiro"; guide = "baldur
              date = "2026-10-01"; key = "PROJ-42"; minutes = 60; minutes_low = 45; confidence = "medium"
              commits = @("9f3c1a2b4d5e6f708192a3b4c5d6e7f8091a2b3c")
              summary = "Added jittered retry to the poller and its tests." }
-$report | ConvertTo-Json -Compress | & "$env:LOCALAPPDATA\Asgard\app\apps\baldur\baldur.cmd" ai record --json
+$report | ConvertTo-Json -Compress | & asgard baldur ai record --json
 ```
 
 Through Ysildir (Asgard's MCP server), call `baldur_record_estimate` with the report as `report`:
@@ -80,13 +82,13 @@ the same object, and the same rules (see "Through Ysildir", below).
 
 ## Reading what Baldur has
 
-- `baldur.cmd ai list --json`: the reports recorded (`ai withdraw r12` withdraws one of yours).
-- `baldur.cmd ai show 2026-10-01 --json`: the day's estimate beside its AI-assisted figures.
-- `baldur.cmd report 2026-10-01`: the day report the person reviews.
-- `baldur.cmd ai guide`: this guide.
+- `asgard baldur ai list --json`: the reports recorded (`ai withdraw r12` withdraws one of yours).
+- `asgard baldur ai show 2026-10-01 --json`: the day's estimate beside its AI-assisted figures.
+- `asgard baldur report 2026-10-01`: the day report the person reviews.
+- `asgard baldur ai guide`: this guide.
 
 When the person asks how their day looks, show them `ai show` and `report`, and give them the
-command `ai show` ends with, `baldur.cmd approve --date DATE --ai ID`, which takes the AI-assisted
+command `ai show` ends with, `asgard baldur approve --date DATE --ai ID`, which takes the AI-assisted
 figures if they agree with them. The ID names exactly the figures they saw: if a report or review
 changes them first, Baldur refuses and shows the new ones.
 
@@ -141,12 +143,12 @@ agent  → baldur_day {"date": "2026-10-01"}
                       {"key": "PROJ-51", "estimate": 30, "ai_assisted": 75, ...}],
           "ai": {"id": "3f2a9c1d", "method": "agent", "source": "agent estimates (kiro, 2 reports)",
                  "reports": ["r12", "r13"]},
-          "take": "baldur.cmd approve --date 2026-10-01 --ai 3f2a9c1d",
-          "keep": "baldur.cmd approve --date 2026-10-01", ...}
+          "take": "asgard baldur approve --date 2026-10-01 --ai 3f2a9c1d",
+          "keep": "asgard baldur approve --date 2026-10-01", ...}
 agent  → person: "From git, Baldur estimates PROJ-42 at 1h30m and PROJ-51 at 30m. With my two
           reports (r12, r13) it suggests 45m and 1h15m: the same 2h day, with 45m moved to PROJ-51.
-          To take those: baldur.cmd approve --date 2026-10-01 --ai 3f2a9c1d. To keep Baldur's:
-          baldur.cmd approve --date 2026-10-01."
+          To take those: asgard baldur approve --date 2026-10-01 --ai 3f2a9c1d. To keep Baldur's:
+          asgard baldur approve --date 2026-10-01."
 ```
 
 Say where each number comes from: Baldur's estimate from git, an AI-assisted figure, or what the
@@ -169,7 +171,7 @@ agent  → baldur_submit_review {"date": "2026-10-01", "model": "<your model>", 
                            {"ticket": "PROJ-51", "minutes": 45, "confidence": "medium", "evidence": ["r13"],
                             "reason": "The form validation was the real work."}]}}
        ← {"figures": {"PROJ-42": 45, "PROJ-51": 75}, "flags": [],
-          "take": "baldur.cmd approve --date 2026-10-01 --ai 7e08671d", ...}
+          "take": "asgard baldur approve --date 2026-10-01 --ai 7e08671d", ...}
 ```
 
 The review needs Baldur's `review_mode` set to `metadata`, which only the person can do. If the
@@ -180,7 +182,7 @@ day changes before you submit, Baldur refuses the reply: ask for a new pack.
 ```
 person → "Just approve it for me."
 agent  → person: "Approving is yours to do, so there's no tool for it. Run:
-          baldur.cmd approve --date 2026-10-01 --ai 7e08671d"
+          asgard baldur approve --date 2026-10-01 --ai 7e08671d"
 ```
 
 In Kiro, a guard hook blocks the command if you run it in the terminal anyway.

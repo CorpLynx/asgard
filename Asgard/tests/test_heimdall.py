@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 for folder in (ROOT, ROOT / "apps" / "heimdall"):
@@ -52,9 +53,13 @@ class Base(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(body), encoding="utf-8")
 
+    interactive = False       # a test at a real terminal must never wait for typing; tests that ask set this
+
     def run_cli(self, *argv):
         out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+                mock.patch.object(cli, "_interactive",
+                                  side_effect=lambda args: self.interactive and not getattr(args, "json", False)):
             code = cli.main(list(argv))
         return code, out.getvalue(), err.getvalue()
 

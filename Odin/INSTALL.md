@@ -6,15 +6,15 @@ Odin is an Asgard app (since Oct 10, 2026), so it installs with Asgard. This pag
 
 Follow [Asgard's install steps](../Asgard/README.md#install): the Python install (your agency's Python 3.11 or newer) or the packaged build. Setup copies Asgard, Odin included, to `%LOCALAPPDATA%\Asgard\app` and opens the launcher. Odin runs on the same Python as Asgard, so there is nothing more to install.
 
-Odin's command line is `odin.cmd` in `%LOCALAPPDATA%\Asgard\app\apps\odin`. Open a Command Prompt there (or add that folder to your PATH) to use the `odin` commands below.
+Odin's command line is `asgard odin`, which works from any folder once setup has put `asgard` on your Path (open a new terminal after setup). The older `odin.cmd`, in `%LOCALAPPDATA%\Asgard\app\apps\odin`, runs the same commands and is what the "Asgard Odin daily" task calls.
 
 ## 2. Moving from Odin
 
 If you used Odin before it moved into Asgard (as `Odin`):
 
 - Its folder, `%LOCALAPPDATA%\odin` (or `%LOCALAPPDATA%\meeting2jira` from the first version), moves to `%LOCALAPPDATA%\Asgard\odin` the first time any Odin command runs: your config, the DPAPI-encrypted token and the logs come across unchanged.
-- Its record of which meetings already have sub-tasks (`state.db`) moves into Muninn on the first real run, before anything is created, so no meeting is created again. The old file is kept as `state.db.migrated-DATE` for 30 days. Run `odin preview` first if you want to see that for yourself: it reads `state.db` and lists those meetings as already there.
-- `odin schedule` replaces the old `meeting2jira-daily` task with "Asgard Odin daily".
+- Its record of which meetings already have sub-tasks (`state.db`) moves into Muninn on the first real run, before anything is created, so no meeting is created again. The old file is kept as `state.db.migrated-DATE` for 30 days. Run `asgard odin preview` first if you want to see that for yourself: it reads `state.db` and lists those meetings as already there.
+- `asgard odin schedule` replaces the old `meeting2jira-daily` task with "Asgard Odin daily".
 - If you had pointed Asgard's Odin tile at your old copy, setup puts it back to Asgard's own Odin.
 
 ## 3. Set it up
@@ -25,11 +25,11 @@ Click the **Odin** tile. On **Today**:
 2. Create a personal access token in Jira (your profile, *Personal Access Tokens*, with an expiry date), paste it, and **Save token**. Odin encrypts it for your Windows account.
 3. **Check the setup.** It confirms Jira answers, each parent issue exists and isn't itself a sub-task, and your sub-task type is valid (it lists the valid names if not).
 
-The same from the command line: `odin setup` walks through the environment check, the config, the token and the check.
+The same from the command line: `asgard odin setup` walks through the environment check, the config, the token and the check.
 
 ## 4. Preview, then go live
 
-**Preview** (`odin preview`) exports yesterday and today from Outlook and shows what would be created and posted, changing nothing. Then **Run now** (`odin`). The first real run also reads a year of your Jira issues and worklogs into Muninn, so it takes longer than later ones.
+**Preview** (`asgard odin preview`) exports yesterday and today from Outlook and shows what would be created and posted, changing nothing. Then **Run now** (`asgard odin`). The first real run also reads a year of your Jira issues and worklogs into Muninn, so it takes longer than later ones.
 
 ---
 
@@ -47,7 +47,7 @@ case-insensitive and match anywhere in the text:
 }
 ```
 
-Add an entry, run `odin preview`, and check the skip reason appears. The reason text
+Add an entry, run `asgard odin preview`, and check the skip reason appears. The reason text
 names the exact string that matched, e.g. `subject contains 'ooo'`.
 
 These match inside words, so `"PTO"` would also catch `OPTOMETRIST`. When you need word
@@ -109,7 +109,7 @@ including anything on a non-working day:
 | `skip` | Not created at all. |
 
 A meeting that merely *runs past* the end of your tour counts as inside, and is never skipped or
-rerouted — work that overran is still work. `odin preview` marks wholly-outside meetings
+rerouted — work that overran is still work. `asgard odin preview` marks wholly-outside meetings
 with a `*` so you can see the classification before anything is created.
 
 This setting does **not** change which days get scanned. See the note at the end of the next
@@ -120,13 +120,13 @@ section for why that matters.
 ## 8. Run it on a schedule (optional)
 
 ```
-odin schedule            # as you, only while logged on
-odin unschedule
+asgard odin schedule              # as you, only while logged on
+asgard odin unschedule
 ```
 
 If `tour_of_duty` is enabled, the task is scheduled 30 minutes after your tour ends, so the day's
 meetings have finished; otherwise it defaults to 16:45. Override with
-`odin schedule -At '17:15'`.
+`asgard odin schedule -At '17:15'`.
 
 Outlook COM needs your interactive session, so the task only runs while you are logged on. It
 looks back one day, picking up meetings that ended after the previous run.
@@ -137,7 +137,7 @@ meeting that was still in progress at run time is simply picked up by the next r
 lookback. If you want a wider safety margin, widen the window — it costs nothing:
 
 ```
-odin run -DaysBack 3
+asgard odin run -DaysBack 3
 ```
 
 If Group Policy blocks task creation you will see "Access is denied"; run `odin` (or **Run now**) by
@@ -146,11 +146,11 @@ hand instead.
 A scheduled task is invisible when it breaks, so check on it now and then:
 
 ```
-odin status
+asgard odin status
 ```
 
 That leads with the last run's result and warns if it was a failure, if nothing has run for several
-days, or if there is an unresolved alert. `odin doctor` reports the same thing alongside
+days, or if there is an unresolved alert. `asgard odin doctor` reports the same thing alongside
 the environment check.
 
 You should not have to remember to check, though. **If a run fails, a file named
@@ -171,22 +171,22 @@ Some older Jira versions do not expose expiry dates, in which case the check sil
 ## Command reference
 
 ```
-odin                 daily run: export yesterday and today, push, read Jira into Muninn, post approved days
-odin preview         same, but change nothing
-odin setup           first-run walkthrough
-odin check           verify config, token, Muninn and Jira access
-odin status          last-run health, recent sub-tasks, what waits to be posted
-odin sync            read Jira into Muninn only
-odin post            post approved Baldur days only (post --dry-run lists them)
-odin report          every meeting sub-task as a CSV for Power BI (report --no-subjects)
-odin settle [ID]     posts in doubt (sent, but Jira's answer never came); settle ID asks Jira again
-odin doctor          read-only environment report
-odin schedule        register the weekday scheduled task
-odin unschedule      remove the scheduled task
-odin csv <file>      the daily run from an Outlook CSV export
-odin selftest        unit tests plus the Windows-only checks
-odin run [args]      Invoke-MeetingSync.ps1 passthrough, e.g. run -DaysBack 7
-odin cli [args]      Python CLI passthrough, e.g. cli forget PROJ-501
+asgard odin                       daily run: export yesterday and today, push, read Jira into Muninn, post approved days
+asgard odin preview               same, but change nothing
+asgard odin setup                 first-run walkthrough
+asgard odin check                 verify config, token, Muninn and Jira access
+asgard odin status                last-run health, recent sub-tasks, what waits to be posted
+asgard odin sync                  read Jira into Muninn only
+asgard odin post                  post approved Baldur days only (post --dry-run lists them)
+asgard odin report                every meeting sub-task as a CSV for Power BI (report --no-subjects)
+asgard odin settle [ID]           posts in doubt (sent, but Jira's answer never came); settle ID asks Jira again
+asgard odin doctor                read-only environment report
+asgard odin schedule              register the weekday scheduled task
+asgard odin unschedule            remove the scheduled task
+asgard odin csv <file>            the daily run from an Outlook CSV export
+asgard odin selftest              unit tests plus the Windows-only checks
+asgard odin run [args]            Invoke-MeetingSync.ps1 passthrough, e.g. run -DaysBack 7
+asgard odin cli [args]            Python CLI passthrough, e.g. cli forget PROJ-501
 ```
 
 Exit codes: `0` fine, `1` finished with per-item errors (a meeting, an approved day Jira refused) or a
@@ -204,8 +204,8 @@ Under Constrained Language Mode, or without classic Outlook, export the calendar
 3. Push it:
 
 ```
-odin csv "%USERPROFILE%\Documents\calendar.csv" -DryRun
-odin csv "%USERPROFILE%\Documents\calendar.csv"
+asgard odin csv "%USERPROFILE%\Documents\calendar.csv" -DryRun
+asgard odin csv "%USERPROFILE%\Documents\calendar.csv"
 ```
 
 4. **Delete the CSV afterwards** — it contains full meeting bodies.
@@ -220,16 +220,16 @@ so the two paths will not duplicate each other.
 
 | Symptom | Fix |
 |---|---|
-| `No config found` | Click the Odin tile and **Create settings**, or run `odin setup`. |
+| `No config found` | Click the Odin tile and **Create settings**, or run `asgard odin setup`. |
 | `Muninn isn't set up yet` | Open Asgard once; it creates Muninn. |
-| `no Python that can run Odin was found` | Odin needs the Python Asgard runs on (3.11 or newer on Windows, for Muninn's SQLite). The message lists every candidate tried and why each was rejected. Run Odin from Asgard's folder, or pass `odin run -Python "C:\path\to\python.exe"`. |
+| `no Python that can run Odin was found` | Odin needs the Python Asgard runs on (3.11 or newer on Windows, for Muninn's SQLite). The message lists every candidate tried and why each was rejected. Run Odin from Asgard's folder, or pass `asgard odin run -Python "C:\path\to\python.exe"`. |
 | `Another Odin run is in progress` | The scheduled task is running, or the window is. Wait for it. Windows lets go of the lock the moment a run ends, however it ended, so this only appears while one really is running. |
-| Scripts won't run at all | `odin doctor` reports execution policy and the internet-zone mark. Use `Unblock-File`, never `-ExecutionPolicy Bypass`. |
+| Scripts won't run at all | `asgard odin doctor` reports execution policy and the internet-zone mark. Use `Unblock-File`, never `-ExecutionPolicy Bypass`. |
 | `...returned 'text/html' instead of JSON` | An SSO or proxy page is intercepting the API. Ask the Jira admins which URL accepts token-authenticated REST calls. |
 | Certificate errors | Export your agency CA chain as PEM and set `jira.ca_bundle`. Never disable verification. |
-| `Could not decrypt jira_token.dpapi` | DPAPI only opens for the same user on the same machine. Paste the token again on **Today**, or run `odin set-token`. |
+| `Could not decrypt jira_token.dpapi` | DPAPI only opens for the same user on the same machine. Paste the token again on **Today**, or run `asgard odin set-token`. |
 | A security prompt from Outlook | Something read a guarded property. Check whether `-IncludeOrganizer` is in play; without it the export avoids guarded fields. |
-| Export produced 0 items | Regional date format. Run `odin run -DaysBack 1 -Verbose` and inspect the `Restrict` filter it prints. |
+| Export produced 0 items | Regional date format. Run `asgard odin run -DaysBack 1 -Verbose` and inspect the `Restrict` filter it prints. |
 | Approved days weren't posted | The run's worklog sync didn't finish, so Odin couldn't tell what Jira already holds; the run says what failed, and the days wait for the next run. |
 
 More detail: [README troubleshooting](README.md#troubleshooting).

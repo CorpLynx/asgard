@@ -1,13 +1,13 @@
 """Looking after Muninn by hand.
 
-    python Asgard.pyw --muninn prepare           create Muninn or bring it up to date, as opening Asgard does
-    python Asgard.pyw --muninn status            version, size, backups, today's housekeeping
-    python Asgard.pyw --muninn check             everything that should never happen (exit 1 if any)
-    python Asgard.pyw --muninn repair            rebuild the search index, fix event cursors
-    python Asgard.pyw --muninn backup            a copy now, kept apart from the daily ones
-    python Asgard.pyw --muninn restore [FILE]    put a backup back (the newest if FILE is left out)
-    python Asgard.pyw --muninn maintain          run today's housekeeping again
-    python Asgard.pyw --muninn retention on|off  prune old operational rows daily, or don't (default off)
+    asgard muninn prepare           create Muninn or bring it up to date, as opening Asgard does
+    asgard muninn status            version, size, backups, today's housekeeping
+    asgard muninn check             everything that should never happen (exit 1 if any)
+    asgard muninn repair            rebuild the search index, fix event cursors
+    asgard muninn backup            a copy now, kept apart from the daily ones
+    asgard muninn restore [FILE]    put a backup back (the newest if FILE is left out)
+    asgard muninn maintain          run today's housekeeping again
+    asgard muninn retention on|off  prune old operational rows daily, or don't (default off)
 
 Also `python -m asgard.muninn ...` from the install folder. Use python.exe, not pythonw.exe:
 pythonw has no console to print to. Exit codes: 0 fine, 1 the check found errors, 2 couldn't run.
@@ -205,7 +205,7 @@ def main(argv: Optional[List[str]] = None, prog: str = "Asgard.pyw --muninn") ->
         print(f"Muninn: {exc}", file=sys.stderr)
         return 2
     except sqlite3.DatabaseError as exc:
-        print(f"Muninn: {exc}. If the file is damaged, run: Asgard.pyw --muninn restore", file=sys.stderr)
+        print(f"Muninn: {exc}. If the file is damaged, run: asgard muninn restore", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         return 130

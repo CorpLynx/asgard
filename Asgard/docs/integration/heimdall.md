@@ -24,6 +24,22 @@ Keep to your own `system` value: the guard is table-level, so the module (propos
 | Submit | the person clicks Submit; then `submissions.mark_submitted(con, id, external_id, url)` | Security submissions carry an attestation in your name, so the click stays human |
 | Track | poll queue `next_poll_at` (`ix_submissions_poll`); `submissions.record_status(con, id, state, raw)` | `last_status_raw` keeps the status text as shown; emits `submission.status_changed` |
 
+## The command line, and AI clients
+
+Heimdall's commands run as `asgard heimdall ...` from any folder (`heimdall.cmd` still works). Besides `init`, `fields`, `template` and `fill`, since issue #12:
+
+| Command | What it does |
+| --- | --- |
+| `template variables NAME [--json]` | What a template asks for: name, label, kind, checks, options, library |
+| `template check NAME [--json]` | Reads the template, checks its libraries are here, and says what a fill would ask for; no values needed. Exit 1 if it can't be filled yet |
+| `library search NAME TEXT [--json]` | The window's picker search: entry names and descriptions that match, never values |
+| `fill -t NAME --vars FILE.json` | The variables' values as one JSON object; `--var` overrides it |
+| `fill -t NAME` at a terminal | Asks for each value not given, one at a time, checking each as you type. A script or `--json` never gets a prompt: it fails naming what's missing |
+
+The guides for the people who write [templates](../heimdall-templates.md) and publish [libraries](../heimdall-libraries.md) are separate.
+
+Ysildir (docs/integration/ysildir.md) has five read-only Heimdall tools, each off until the person switches it on: `heimdall_templates`, `heimdall_template_variables`, `heimdall_library_list`, `heimdall_library_search` and `heimdall_plan`. They return names and descriptions, never a template's field values or a library's values (a plan shows a library pick by the entry's name), and no tool fills the form, clicks Submit, or changes a template or library: the fill and the Submit click stay with the person. Baldur's agent guard doesn't read `asgard heimdall fill`: the fill opens Edge and stops before Submit, and is the person's to run.
+
 ## Rules for the diverging copy
 
 1. Open with `muninn.open_app("heimdall", supported=(3, 3))`; never migrate. If Heimdall needs columns, they come in an Asgard migration.

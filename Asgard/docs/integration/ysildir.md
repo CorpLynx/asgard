@@ -3,11 +3,12 @@
 Identity `ysildir` · built Oct 9, 2026, not yet tried on the workstation · an MCP server (stdio) so an approved AI client can use Asgard
 
 Ysildir lets an AI client use Asgard: Kiro, Copilot agent mode in VS Code, or Claude Code. It
-does three things:
+does four things:
 
-- **Teaches.** It tells the agent what Baldur and Muninn are and how to use them.
+- **Teaches.** It tells the agent what Baldur, Muninn and Heimdall are and how to use them.
 - **Takes estimates.** It takes the agent's estimates of your time into Baldur.
 - **Answers questions.** It answers questions from Muninn.
+- **Shows Heimdall's templates and plans.** It lists your security change templates and what they ask for, searches your libraries by name, and shows what a fill would type. It never fills a form or clicks Submit, and it never shows a library's values.
 
 It never approves, changes or posts anything; those stay with you. Whether a client may call it
 at all depends on that client's MCP settings, and for Copilot also on GitHub's "MCP servers in
@@ -46,13 +47,13 @@ The official MCP Python SDK (`mcp` 2.3.0, `MCPServer`), running only its stdio t
 
 | Command | What it does |
 | --- | --- |
-| `ysildir.cmd check` | Starts the server in memory and lists what an agent would see: the protocol version, Muninn's version, each tool with its switch, the prompts and resources. `--all` shows it as if every tool were on |
-| `ysildir.cmd tools` | Each tool, on or off, and what it sends to the AI client |
-| `ysildir.cmd tools --on NAME ...` / `--off NAME ...` | Switches tools. You run this, never an agent (Kiro's guard hook blocks it). Restart the MCP server in your client afterwards |
-| `ysildir.cmd setup --kiro DIR` | Adds Ysildir to a Kiro workspace (`DIR\.kiro\settings\mcp.json`); `--kiro-user` for every workspace |
-| `ysildir.cmd setup --vscode DIR` | Adds it to a VS Code workspace (`DIR\.vscode\mcp.json`); `--vscode-user` adds it to your profile with `code --add-mcp` |
-| `ysildir.cmd setup --claude DIR` | Adds it to a Claude Code workspace with `claude mcp add --scope project`, or writes `DIR\.mcp.json` when `claude` isn't on PATH |
-| `ysildir.cmd serve` | What the client starts. You don't run it by hand |
+| `asgard ysildir check` | Starts the server in memory and lists what an agent would see: the protocol version, Muninn's version, each tool with its switch, the prompts and resources. `--all` shows it as if every tool were on |
+| `asgard ysildir tools` | Each tool, on or off, and what it sends to the AI client |
+| `asgard ysildir tools --on NAME ...` / `--off NAME ...` | Switches tools. You run this, never an agent (Kiro's guard hook blocks it). Restart the MCP server in your client afterwards |
+| `asgard ysildir setup --kiro DIR` | Adds Ysildir to a Kiro workspace (`DIR\.kiro\settings\mcp.json`); `--kiro-user` for every workspace |
+| `asgard ysildir setup --vscode DIR` | Adds it to a VS Code workspace (`DIR\.vscode\mcp.json`); `--vscode-user` adds it to your profile with `code --add-mcp` |
+| `asgard ysildir setup --claude DIR` | Adds it to a Claude Code workspace with `claude mcp add --scope project`, or writes `DIR\.mcp.json` when `claude` isn't on PATH |
+| `asgard ysildir serve` | What the client starts. You don't run it by hand |
 
 `setup --print` shows the commands and snippets without changing anything; `--force` replaces an
 entry that's already there. Setup keeps every other server in a file, refuses a file it can't
@@ -88,11 +89,11 @@ take it:
 | --- | --- |
 | `initialize` instructions (`apps/ysildir/instructions.md`) | Clients that pass server instructions on to the model. Under 2,000 characters; lines naming a tool that's off are left out |
 | Tool descriptions | Every client, always |
-| `asgard_guide(topic)` | Any client with tools. Topics: `baldur` (`apps/baldur/prompts/agent-guide.md`, `baldur-agent-2`, with worked examples), `muninn` (`asgard/muninn/agent-guide.md`, `muninn-agent-1`), `review` (Baldur's review prompt), `tools` (written from your switches) |
+| `asgard_guide(topic)` | Any client with tools. Topics: `baldur` (`apps/baldur/prompts/agent-guide.md`, `baldur-agent-2`, with worked examples), `muninn` (`asgard/muninn/agent-guide.md`, `muninn-agent-1`), `review` (Baldur's review prompt), `heimdall` (`apps/heimdall/prompts/agent-guide.md`, `heimdall-agent-1`: templates, libraries and plans), `tools` (written from your switches) |
 | Resources `asgard://guides/baldur`, `muninn`, `review` | Clients that attach MCP resources |
 | Prompts `record-estimate`, `my-day`, `review-day`, `what-changed` | Slash commands you type. A prompt whose tools are off isn't offered |
 
-Kiro also gets Baldur's steering file and guard hooks (`baldur.cmd ai kiro --into DIR`). Those
+Kiro also gets Baldur's steering file and guard hooks (`asgard baldur ai kiro --into DIR`). Those
 work without MCP.
 
 ## Tools
@@ -111,12 +112,48 @@ work without MCP.
 | `muninn_day_status` | no | `date_from`, `date_to` | `v_day_status`, `v_unpostable_days` | — |
 | `muninn_issue` | no | `key` | `work_item_aliases` → `work_items` | — |
 | `muninn_search` | no | `query`, `kinds`, `limit` | `search` (FTS5, bm25; each word quoted); your own commits only | — |
+| `heimdall_templates` | no | — | Heimdall's `templates.Store` and `variables_of`, as `asgard heimdall template list --json` reads them | — |
+| `heimdall_template_variables` | no | `template` | One template's variables, as `asgard heimdall template variables NAME --json` | — |
+| `heimdall_library_list` | no | — | `library.Store` names and `info()`; no entries | — |
+| `heimdall_library_search` | no | `library`, `query` | `Library.search`: entry names and descriptions, never values | — |
+| `heimdall_plan` | no | `template`, `variables` | `templates.plan()` with library entries resolved to their names | — |
 
 Date ranges cover at most 31 days. There is never a tool to approve, reject or change time, note
-real hours, accept a calibration, change settings, keys or repositories, collect, post, or reach
-Jira or the network; a test checks the tool list, and that no Ysildir module calls a decision. An
-agent gives you the command instead, for example `baldur.cmd approve --date 2026-10-01 --ai 3f2a9c1d`:
+real hours, accept a calibration, change settings, keys or repositories, collect, post, fill or
+submit a Heimdall form, change a template or a library, or reach Jira or the network; a test checks
+the tool list, and that no Ysildir module calls a decision or Heimdall's browser. An
+agent gives you the command instead, for example `asgard baldur approve --date 2026-10-01 --ai 3f2a9c1d`:
 the id names exactly the figures `baldur_day` showed, so a later report can't change what you approve.
+
+### Heimdall's tools
+
+The five Heimdall tools (the last five rows of the table above) are read-only and off by default,
+each with its own switch. Heimdall's own code answers them (`apps/ysildir/ysildir/heimdall_tools.py`), so a message is Heimdall's:
+
+- **Names, never values.** `heimdall_templates` and `heimdall_template_variables` return each template's name,
+  description and the variables it asks for (name, label, kind, a textbox's checks, a dropdown's
+  options, the library a library variable uses). They never return the values a template fills in.
+  `heimdall_library_list` returns a library's name, description, entry count and version.
+  `heimdall_library_search` returns entry names and descriptions, and never searches values.
+- **A plan shows a library pick by its name.** `heimdall_plan` takes a template and the values for its
+  variables and returns what a fill would type into each field, using `templates.plan()` as the command
+  line does. A library variable resolves to the entry's *name*, whatever the library renders
+  (`Store.resolver(names_only=True)`), and the answer says `library_values_hidden`. Decided Oct 11: a
+  library's values are what its publisher chose to keep from users (`"renders": "name"` exists for
+  libraries whose values must never be on the machine), so no option, and no switch, shows them to an
+  AI client; the person sees them in Edge before they click Submit. The attachment comes back as a file
+  name, not a folder.
+- **Refusals are Heimdall's.** No form file yet (`asgard heimdall init`), no such template, a missing
+  or wrong value (`Give a value for Source (SRC_ADDR)`, `"web" isn't in the library ip_library_12. Did
+  you mean: web-servers?`) come back as the tool's error, with Heimdall's message.
+- **Untrusted text.** Template names and descriptions, labels, options and library entries are written
+  by the person or a library's publisher. They are cleaned to one capped line with credential-shaped text
+  masked, and named in `untrusted_fields`.
+- **Nothing is written.** The tools read Heimdall's files and Muninn is not opened. A test compares every
+  template, form and library file before and after.
+- The agent's guide is `asgard_guide` topic `heimdall` (`apps/heimdall/prompts/agent-guide.md`,
+  `heimdall-agent-1`). The guides for the people who write [templates](../heimdall-templates.md) and
+  [libraries](../heimdall-libraries.md) are separate.
 
 Freya's `v_review_evidence`, and Loki's and Freya's prompts, come later, once those apps collect
 data.
@@ -125,7 +162,7 @@ data.
 
 - **Your ISSO approves each tool.** Everything Ysildir returns goes to the AI client, and so to
   its model. You switch each tool on or off in `%LOCALAPPDATA%\Asgard\settings\ysildir.json`
-  (`ysildir.cmd tools --on NAME`). Tools that only return Asgard's own text, or the agents' own
+  (`asgard ysildir tools --on NAME`). Tools that only return Asgard's own text, or the agents' own
   reports, start on. Tools that send commit subjects, Jira summaries or times start off.
   `baldur_review_pack` and `baldur_submit_review` also need Baldur's `review_mode` set to
   `metadata`. A switches file that can't be read fails closed: only `asgard_guide` stays on, and

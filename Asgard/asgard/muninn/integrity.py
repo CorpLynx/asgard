@@ -2,7 +2,7 @@
 
 maintain() runs from prepare() once a day. It refreshes the query planner's statistics and folds
 the -wal file back into the database. It prunes old operational rows only once you switch
-retention on (`Asgard.pyw --muninn retention on`): how long federal records must be kept is your
+retention on (`asgard muninn retention on`): how long federal records must be kept is your
 records officer's call, and a year of one engineer's data is under 20 MB, so nothing is deleted
 until you decide.
 
@@ -272,8 +272,8 @@ class CheckReport:
         return [f for f in self.findings if f.area == area]
 
 
-RESTORE_FIX = "Close every Asgard app, then run: Asgard.pyw --muninn restore"
-REPAIR_FIX = "Run: Asgard.pyw --muninn repair"
+RESTORE_FIX = "Close every Asgard app, then run: asgard muninn restore"
+REPAIR_FIX = "Run: asgard muninn repair"
 _MARKER_SQL = "substr(comment, instr(comment, '[asgard:'), 19)"
 
 
@@ -464,7 +464,7 @@ def check(con: sqlite3.Connection, *, full: bool = True) -> CheckReport:
             report.add("warning", "agents", f"Agent estimates {', '.join(changed[:5])}"
                        f"{' ...' if len(changed) > 5 else ''} cite commits they weren't recorded with, so Baldur "
                        "doesn't count them.",
-                       f"Withdraw them (baldur.cmd ai withdraw {changed[0]}) and have the agent record them again.")
+                       f"Withdraw them (asgard baldur ai withdraw {changed[0]}) and have the agent record them again.")
         # Baldur writes a report's agent_estimate.recorded event with it, and the event is what seals its
         # commits (the trigger agent_estimate_commits_with_their_report). One without it was written raw.
         unsealed = [f"r{r[0]}" for r in con.execute(
@@ -475,7 +475,7 @@ def check(con: sqlite3.Connection, *, full: bool = True) -> CheckReport:
             report.add("warning", "agents", f"Agent estimates {', '.join(unsealed[:5])}"
                        f"{' ...' if len(unsealed) > 5 else ''} weren't recorded through Baldur (they have no "
                        "agent_estimate.recorded event), so nothing stops commits being added to them.",
-                       f"Withdraw them (baldur.cmd ai withdraw {unsealed[0]}) and have the agent record them again.")
+                       f"Withdraw them (asgard baldur ai withdraw {unsealed[0]}) and have the agent record them again.")
     return report
 
 

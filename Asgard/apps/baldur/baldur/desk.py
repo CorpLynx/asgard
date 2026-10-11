@@ -6,7 +6,7 @@ them), and nothing here holds Muninn's write lock while the screen waits for you
 
 The window's rules:
 - What you see is a fresh estimate over Muninn as it is now (store.compute), the same numbers
-  `cli.py days` and `cli.py report` show.
+  `asgard baldur days` and `asgard baldur report` show.
 - Approving a day first stores that estimate (store.run, which writes only what's new), then
   approves the day's open proposals through muninn.baldur in one transaction. A figure you
   typed replaces the proposal's for that ticket only.

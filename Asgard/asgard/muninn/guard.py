@@ -24,7 +24,7 @@ What it allows, and why:
 
 This is a guard against mistakes and against one app's bug corrupting another's data. It is not
 a defence against an app that opens the file with plain sqlite3: the triggers and CHECKs in the
-schema, and `Asgard.pyw --muninn check`, cover that case.
+schema, and `asgard muninn check`, cover that case.
 """
 from __future__ import annotations
 

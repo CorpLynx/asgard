@@ -645,7 +645,7 @@ class YsildirBackendTests(Home):
         if self.b.sdk()["ready"]:
             self.skipTest("the SDK is installed here, so the page can write the file")
         reply = self.b.set_tool("muninn_search", True)
-        self.assertIn("ysildir.cmd tools --on", reply["error"])
+        self.assertIn("asgard ysildir tools --on", reply["error"])
 
 
 if __name__ == "__main__":

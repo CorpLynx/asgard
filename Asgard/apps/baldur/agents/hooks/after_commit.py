@@ -16,9 +16,9 @@ from typing import Any, Iterator
 COMMAND_KEYS = {"command", "cmd", "script", "commandLine", "command_line"}
 COMMIT = re.compile(r"(?:^|[\s;&|(])git(?:\.exe)?(?:\s+-[cC]\s+\S+)*\s+commit\b(?![^;&|\n]*--(?:dry-run|help)\b)", re.I)
 REMINDER = ("Baldur: you just committed. If this was work you did with the person, record your estimate of their "
-            "time on it: baldur.cmd ai record --agent <your tool> --guide baldur-agent-2 --minutes <estimate> "
+            "time on it: asgard baldur ai record --agent <your tool> --guide baldur-agent-2 --minutes <estimate> "
             "--commit <git rev-parse HEAD> --confidence <high|medium|low> --summary \"<one sentence, no code>\" "
-            "--json   (full guide: baldur.cmd ai guide)")
+            "--json   (full guide: asgard baldur ai guide)")
 
 
 def commands(event: Any) -> Iterator[str]:

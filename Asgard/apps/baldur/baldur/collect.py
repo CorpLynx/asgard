@@ -72,10 +72,10 @@ def check_ready(con: sqlite3.Connection, settings: Settings) -> None:
     """Refuse to collect or estimate without knowing who you are and which Jira projects count."""
     if not my_emails(con):
         raise CollectError("Baldur doesn't know which commits are yours. Add your git email first: "
-                           "cli.py setup --email you@agency.gov")
+                           "asgard baldur setup --email you@agency.gov")
     if not settings.project_keys:
         raise CollectError("Set project_keys to the Jira projects you work in first: "
-                           "cli.py setup --project PROJ")
+                           "asgard baldur setup --project PROJ")
 
 
 def repo_folders(paths: Sequence[Path]) -> List[Path]:

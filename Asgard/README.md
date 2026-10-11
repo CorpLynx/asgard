@@ -240,7 +240,9 @@ asgard heimdall fill -t "Monthly scan"
   ```
 
   Every variable except a checkbox needs a value, and a fill stops naming every one that's missing. Values go into the form exactly as typed, so `$5` or `{x}` in a value is never misread. `ip_v4` and `ip_v6` take one address, not a range (`10.0.0.0/24` is refused). Templates saved before variables existed keep any braces they had as plain text.
-- **Libraries** are the lists `LIBRARY('name')` picks from, such as a firewall's address groups. Whoever looks after a list publishes it as a JSON file, and `library import FILE` keeps a copy; importing it again updates it. `library list`, `library show NAME --search TEXT` and `library remove NAME` manage them.
+
+  To see what a template asks for before you fill it: `asgard heimdall template variables "Firewall access"` (add `--json` for a program), and `asgard heimdall template check "Firewall access"`, which reads the template, checks its libraries are here, and says what a fill would ask for. Give the values with `--var NAME=VALUE`, or `--vars FILE.json` (one JSON object, for long or repeated fills; `--var` overrides it). At a terminal, `fill` with a value missing asks for each in turn, checks it as you type and asks again after a wrong answer; a script, or `--json`, never gets a prompt and fails naming what's missing. The full guide, with worked examples and the parser's messages, is [docs/heimdall-templates.md](docs/heimdall-templates.md).
+- **Libraries** are the lists `LIBRARY('name')` picks from, such as a firewall's address groups. Whoever looks after a list publishes it as a JSON file, and `library import FILE` keeps a copy; importing it again updates it. `library list`, `library show NAME --search TEXT`, `library search NAME TEXT [--json]` (names and descriptions, never values) and `library remove NAME` manage them. Publishing and updating them is in [docs/heimdall-libraries.md](docs/heimdall-libraries.md).
 
   ```
   {"library": "ip_library_12", "description": "Data centre address groups", "version": "2026-10-01",

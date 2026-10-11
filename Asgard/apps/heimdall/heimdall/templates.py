@@ -134,7 +134,7 @@ class Store:
         if found is None:
             have = ", ".join(self.names()) or "none saved yet"
             raise TemplateError(f'No template named "{name}" (templates: {have}). '
-                                "List them with 'heimdall template list'.")
+                                "List them with 'asgard heimdall template list'.")
         return found
 
     # -------------------------------------------------- changing
@@ -146,7 +146,7 @@ class Store:
         name = check_name(name)
         if _key(name) in self.items and not replace:
             raise TemplateError(f'A template named "{self.items[_key(name)].name}" already exists. '
-                                "Change it with 'heimdall template edit', or overwrite it with --replace.")
+                                "Change it with 'asgard heimdall template edit', or overwrite it with --replace.")
         saved = Saved(name=name, values=normalize(form, values), attachment=_clean_attachment(attachment),
                       description=description.strip(), updated=_now())
         variables_of(form, saved)            # one meaning per variable, none used but undefined
@@ -249,7 +249,7 @@ def problems(form: Form, saved: Saved, libraries: Any = None) -> List[str]:
         for name in sorted({v.library.casefold() for v in defined if v.kind == "LIBRARY"}):
             if not libraries.has(name):
                 found.append(f"the library {name} isn't on this computer; import it with "
-                             "'heimdall library import FILE'")
+                             "'asgard heimdall library import FILE'")
     return found
 
 
@@ -273,7 +273,7 @@ def plan(form: Form, saved: Optional[Saved], overrides: Dict[str, Any], attachme
         bad = problems(form, saved, libraries)
         if bad:
             raise TemplateError(f'Template "{saved.name}" doesn\'t match the form: {"; ".join(bad)}. '
-                                f"Fix it with 'heimdall template edit \"{saved.name}\"'.")
+                                f"Fix it with 'asgard heimdall template edit \"{saved.name}\"'.")
     chosen = _layered(form, saved, overrides)
 
     missing = [f.label for f in form.fields if f.required and chosen[f.label] in (None, "")]

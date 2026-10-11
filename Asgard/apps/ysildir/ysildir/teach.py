@@ -5,9 +5,9 @@ so Ysildir keeps no copy that could drift:
 - the initialize instructions: apps/ysildir/instructions.md, without each line that names a tool
   that is switched off;
 - asgard_guide(topic): baldur (apps/baldur/prompts/agent-guide.md), muninn
-  (asgard/muninn/agent-guide.md), review (apps/baldur/prompts/review.md), and tools, which is
-  written here from the switches;
-- the same three guides as resources, asgard://guides/<topic>, while asgard_guide is on;
+  (asgard/muninn/agent-guide.md), review (apps/baldur/prompts/review.md), heimdall
+  (apps/heimdall/prompts/agent-guide.md), and tools, which is written here from the switches;
+- the same four guides as resources, asgard://guides/<topic>, while asgard_guide is on;
 - the prompts record-estimate, my-day, review-day and what-changed, each registered only when the
   tools it names are on.
 """
@@ -30,10 +30,12 @@ GUIDES: Dict[str, Path] = {
     "baldur": APPS / "baldur" / "prompts" / "agent-guide.md",
     "muninn": Path(muninn.__file__).resolve().parent / "agent-guide.md",
     "review": APPS / "baldur" / "prompts" / "review.md",
+    "heimdall": APPS / "heimdall" / "prompts" / "agent-guide.md",
 }
 GUIDE_TITLES = {"baldur": "Baldur for AI agents: recording estimates, explaining a day",
                 "muninn": "Muninn for AI agents: answering questions about the person's work",
-                "review": "Baldur's review prompt"}
+                "review": "Baldur's review prompt",
+                "heimdall": "Heimdall for AI agents: templates, libraries and plans"}
 MAX_INSTRUCTIONS = 2000
 _TOOL = re.compile(r"\b(" + "|".join(NAMES) + r")\b")
 
@@ -60,28 +62,28 @@ def tools_guide(config: Config) -> str:
     out = ["# Ysildir's tools on this computer", "",
            "The person switches each tool on or off, and their ISSO approves what each one sends you. A tool "
            "that's off isn't available to you: tell the person it exists, and don't look for a way around it. To "
-           "turn one on, the person runs `ysildir.cmd tools --on NAME`, then restarts the MCP server in their AI "
+           "turn one on, the person runs `asgard ysildir tools --on NAME`, then restarts the MCP server in their AI "
            "client.", "",
            "| Tool | Switch | Sends you | Without the tool |", "| --- | --- | --- | --- |"]
     out += [f"| `{s.name}` | {'on' if config.on(s.name) else 'off'} | {s.sends} | `{s.fallback}` |"
-            if s.fallback.startswith("baldur.cmd") else
+            if s.fallback.startswith(("asgard ", "asgard baldur")) else
             f"| `{s.name}` | {'on' if config.on(s.name) else 'off'} | {s.sends} | {s.fallback} |" for s in SWITCHES]
     if config.problem:
         out += ["", f"The switches file ({config.path.name}) couldn't be used: {config.problem}. Every tool but "
-                f"`{ALWAYS_ON}` is off until the person fixes the file or deletes it (`ysildir.cmd tools --list` "
+                f"`{ALWAYS_ON}` is off until the person fixes the file or deletes it (`asgard ysildir tools --list` "
                 "shows what's wrong)."]
     if config.unknown:
         out += ["", f"The switches file names tools Ysildir doesn't have, which are ignored: "
                 f"{', '.join(config.unknown[:10])}."]
     out += ["", "`baldur_review_pack` and `baldur_submit_review` also need Baldur's AI review on: the person runs "
-            "`baldur.cmd setup --set review_mode=metadata` once their ISSO agrees.", "",
+            "`asgard baldur setup --set review_mode=metadata` once their ISSO agrees.", "",
             "Never a tool, whatever is switched on: approving, rejecting or changing time, real hours, calibration, "
-            "Baldur's settings, keys or repositories, collecting, and posting to Jira. Give the person the command "
-            "instead, such as `baldur.cmd approve --date 2026-10-01 --ai 3f2a9c1d` (the id names the figures "
-            "they saw).",
+            "Baldur's settings, keys or repositories, collecting, posting to Jira, and filling or submitting a "
+            "Heimdall form. Give the person the command instead, such as `asgard baldur approve --date 2026-10-01 "
+            "--ai 3f2a9c1d` (the id names the figures they saw).",
             "",
             "When MCP isn't available at all, the command-line column still works, and AI review works through "
-            "the clipboard: `baldur.cmd ai pack DATE`, then `baldur.cmd ai review DATE ANSWER.json`."]
+            "the clipboard: `asgard baldur ai pack DATE`, then `asgard baldur ai review DATE ANSWER.json`."]
     return "\n".join(out) + "\n"
 
 
@@ -90,7 +92,7 @@ def guide(topic: str, config: Config) -> str:
         return tools_guide(config)
     path = GUIDES.get(topic)
     if path is None:
-        raise Refused(f"There's no {topic} guide; the topics are baldur, muninn, review and tools.")
+        raise Refused(f"There's no {topic} guide; the topics are baldur, muninn, review, heimdall and tools.")
     return path.read_text(encoding="utf-8")
 
 

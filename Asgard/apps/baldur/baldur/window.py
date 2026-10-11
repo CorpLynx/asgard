@@ -39,7 +39,7 @@ except ImportError:          # main() explains what to do
 EXPECTED = (desk.DeskError, muninn.MuninnError, CollectError, config.SettingsError, GitError, cli.CliError,
             GitHubError, sqlite3.Error)
 SETUP_HINT = ("Set Baldur up first, from Command Prompt in its folder:\n"
-              "  baldur.cmd setup --from-git --project PROJ --root C:\\src")
+              "  asgard baldur setup --from-git --project PROJ --root C:\\src")
 
 
 def open_db() -> sqlite3.Connection:
@@ -559,7 +559,7 @@ class BaldurWindow:
         if not host:
             self.reviews_label.configure(text="Pull requests: GitHub is off")
         elif not synced and not items:
-            self.reviews_label.configure(text="Pull requests: no token yet (baldur.cmd github token)")
+            self.reviews_label.configure(text="Pull requests: no token yet (asgard baldur github token)")
         else:
             self.reviews_label.configure(text=f"Pull requests: {asked} {'review' if asked == 1 else 'reviews'} "
                                               "requested of you")
@@ -592,7 +592,7 @@ class BaldurWindow:
 
 def main(argv: Optional[List[str]] = None) -> int:
     if tk is None:
-        print("Baldur's window needs Python with Tcl/Tk (tkinter). The command line works without it: baldur.cmd")
+        print("Baldur's window needs Python with Tcl/Tk (tkinter). The command line works without it: asgard baldur")
         return 2
     root = tk.Tk()
     try:

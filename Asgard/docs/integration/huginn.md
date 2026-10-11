@@ -9,7 +9,7 @@ Huginn could have been one process that collects from Jira, git and Teams itself
 So Huginn is:
 
 1. **One per-user scheduled task** (no admin; a single task rather than one per app) that runs `Asgard.pyw --collect` at logon and on an interval.
-2. **A runner** that calls each enabled app's collect entry point in turn, each in its own process under its own identity: `odin sync`, `baldur collect`, later `loki recaps`. A failure in one doesn't stop the others.
+2. **A runner** that calls each enabled app's collect entry point in turn, each in its own process under its own identity: `asgard odin sync`, `asgard baldur collect`, later `asgard loki recaps`. A failure in one doesn't stop the others.
 3. **A log line per pass** in `logs\huginn.log`, and nothing in Muninn beyond what each app's own `Run` records. The `huginn` identity stays reserved for a pass record if one is ever needed.
 
 ## What each app provides

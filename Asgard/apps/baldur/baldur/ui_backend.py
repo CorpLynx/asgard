@@ -306,7 +306,7 @@ class Backend:
         """Read git into Muninn. Reads every repository, so the page calls this off the UI thread."""
         settings = self._settings()
         if not settings.repo_roots:
-            raise ValueError("Tell Baldur where your repositories are first: baldur.cmd setup --root C:\\src")
+            raise ValueError("Tell Baldur where your repositories are first: asgard baldur setup --root C:\\src")
         con = self._open(readonly=False)
         try:
             result = _expected(desk.collect, con, settings)
@@ -362,7 +362,7 @@ class Backend:
             con.close()
         if result is None:
             return {"state": "no token", "at": at, "poll_minutes": poll, "problems": [],
-                    "message": "No GitHub token yet: baldur.cmd github token"}
+                    "message": "No GitHub token yet: asgard baldur github token"}
         return {"state": "fresh", "at": at, "poll_minutes": poll, "problems": list(result.problems),
                 "message": f"Checked GitHub at {at}."}
 

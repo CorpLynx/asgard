@@ -1,4 +1,4 @@
-"""Connecting an AI client to Ysildir: `ysildir.cmd setup`.
+"""Connecting an AI client to Ysildir: `asgard ysildir setup`.
 
 | Option          | The client's own command (preferred)                         | Otherwise, the file setup edits         |
 | --kiro DIR      | none known                                                   | DIR\\.kiro\\settings\\mcp.json             |
@@ -7,7 +7,7 @@
 | --vscode-user   | code --add-mcp JSON (your VS Code profile)                   | -                                       |
 | --claude DIR    | claude mcp add --scope project ysildir -- ..., run in DIR    | DIR\\.mcp.json                           |
 
-The client starts this computer's Python directly with cli.py serve, never through ysildir.cmd: a
+The client starts this computer's Python directly with cli.py serve, never through asgard ysildir: a
 batch file in between can stop on Ctrl+C with "Terminate batch job (Y/N)?" and break stdio. It is
 the Python running setup (sys.executable), because that's the one with the MCP SDK installed: py -3
 could pick another. Run setup again after changing Python.

@@ -55,7 +55,7 @@ class SetupTests(CollectBase, CliCase):
         self.assertIn("Jira projects        PROJ", self.out)
         self.assertIn("(1 repository)", self.out)
         self.assertIn("Policy               overlap (fraction", self.out)
-        self.assertIn("Next: cli.py collect", self.out)
+        self.assertIn("Next: asgard baldur collect", self.out)
         self.assertEqual(config.load().repo_roots, [str(root.resolve())])
 
     def test_projects_and_folders_come_off_again(self):
@@ -64,7 +64,7 @@ class SetupTests(CollectBase, CliCase):
         self.assertEqual(self.cli("setup", "--remove-project", "ops", "--remove-root", str(root)), 0, self.err)
         s = config.load()
         self.assertEqual((s.project_keys, s.repo_roots), (["PROJ"], []))
-        self.assertIn("cli.py setup --root", self.out)
+        self.assertIn("asgard baldur setup --root", self.out)
 
     def test_a_folder_that_isnt_there_is_refused(self):
         self.assertEqual(self.cli("setup", "--root", str(self.dir / "nowhere")), 1)
@@ -74,7 +74,7 @@ class SetupTests(CollectBase, CliCase):
         (self.dir / "gitconfig").write_text("[user]\n\temail = Dev.Doe@agency.gov\n")
         self.con.execute("DELETE FROM identities WHERE kind = 'git_email'")
         self.assertEqual(self.cli("setup"), 0)
-        self.assertIn("cli.py setup --from-git   (git config says Dev.Doe@agency.gov)", self.out)
+        self.assertIn("asgard baldur setup --from-git   (git config says Dev.Doe@agency.gov)", self.out)
         self.assertEqual(self.cli("setup", "--from-git"), 0, self.err)
         self.assertEqual(muninn.identities(self.con, "git_email"), {"dev.doe@agency.gov"})
 
@@ -83,7 +83,7 @@ class SetupTests(CollectBase, CliCase):
         self.assertEqual(self.cli("setup", "--from-git"), 1)
         self.assertIn("Use --email", self.err)
         self.assertEqual(self.cli("setup"), 0)
-        self.assertIn("cli.py setup --email you@agency.gov", self.out)
+        self.assertIn("asgard baldur setup --email you@agency.gov", self.out)
         self.assertEqual(self.cli("setup", "--email", "not-an-email"), 1)
         self.assertIn("isn't an email address", self.err)
         self.assertEqual(muninn.identities(self.con, "git_email"), set())
@@ -110,7 +110,7 @@ class CollectCommandTests(CollectBase, CliCase):
         self.setup_baldur(repo_roots=[str(self.dir / "src")])
         self.assertEqual(self.cli("collect"), 0, self.err)
         self.assertRegex(self.out, r"asgard\s+8 commits \(8 new\), 8 with Jira keys, \d+ new reflog entries")
-        self.assertIn("Next: cli.py estimate", self.out)
+        self.assertIn("Next: asgard baldur estimate", self.out)
         self.assertEqual(self.con.execute("SELECT count(*) FROM commits WHERE is_mine = 1").fetchone()[0], 8)
         self.assertIn("collect: 1 repository, 8 new commits", (paths.log_dir() / "baldur.log").read_text())
         self.assertEqual(self.cli("collect", "--quiet"), 0)        # a scheduled run prints nothing
@@ -133,7 +133,7 @@ class CollectCommandTests(CollectBase, CliCase):
         self.assertEqual(self.cli("collect", str(self.git.path), str(broken)), 1)
         self.assertIn("broken                   failed:", self.out)
         self.assertIn("Baldur: broken wasn't collected:", self.err)
-        self.assertNotIn("Next: cli.py estimate", self.out)
+        self.assertNotIn("Next: asgard baldur estimate", self.out)
         self.assertEqual(self.con.execute("SELECT count(*) FROM commits WHERE is_mine = 1").fetchone()[0], 8)
 
     def test_no_repositories_under_the_folder(self):
@@ -169,7 +169,7 @@ class ReposTests(CliCase):
     def test_none_yet(self):
         self.con.execute("DELETE FROM repos")
         self.assertEqual(self.cli("repos"), 0)
-        self.assertIn("No repositories yet: cli.py collect", self.out)
+        self.assertIn("No repositories yet: asgard baldur collect", self.out)
 
     def test_a_review_only_repository_says_so(self):
         self.con.execute("UPDATE repos SET local_path = NULL, github_repo = 'csb/asgard'")
@@ -191,7 +191,7 @@ class EstimateAndReportTests(CliCase):
         self.assertIn("Thu 2026-10-01", self.out)
         self.assertEqual(self.rows(), [])
         self.assertEqual(self.cli("estimate", "--from", "2026-10-01", "--to", "2026-10-01", "--report"), 0)
-        self.assertIn("1 day to review: cli.py days, then cli.py report DATE", self.out)
+        self.assertIn("1 day to review: asgard baldur days, then asgard baldur report DATE", self.out)
         self.assertEqual(len(self.rows("proposed")), 2)
 
     def test_a_range_with_no_commits_and_a_commit_dated_in_the_future(self):
@@ -225,7 +225,7 @@ class EstimateAndReportTests(CliCase):
         self.cli("estimate", "--from", "2026-10-01", "--to", "2026-10-01")
         self.commit(t(1, 16, 30), "PROJ-51")
         self.assertEqual(self.cli("days", "--from", "2026-10-01", "--to", "2026-10-01"), 0)
-        self.assertIn("Some days changed since they were estimated: cli.py estimate", self.out)
+        self.assertIn("Some days changed since they were estimated: asgard baldur estimate", self.out)
 
 
 class ApproveRejectTests(CliCase):
@@ -506,7 +506,7 @@ class OffWindowsTokenTests(CliCase):
         self.assertIn("GitHub is off (github_api is empty)", self.out)
         for args in (("github", "token"), ("github", "sync")):
             self.assertEqual(self.cli(*args), 1, args)
-            self.assertIn("cli.py setup --set github_api=", self.err)
+            self.assertIn("asgard baldur setup --set github_api=", self.err)
 
     def test_no_token_yet_says_how_to_add_one(self):
         # A server nobody has a token for, so a real Credential Manager on Windows has none either.
@@ -514,7 +514,7 @@ class OffWindowsTokenTests(CliCase):
         self.assertEqual(self.cli("github", "sync"), 1)
         self.assertIn("No GitHub token for github.baldur-tests.example yet", self.err)
         self.assertEqual(self.cli("github"), 0)
-        self.assertIn("Token           none: cli.py github token", self.out)
+        self.assertIn("Token           none: asgard baldur github token", self.out)
         self.assertIn("Last sync       never", self.out)
 
 
@@ -666,7 +666,7 @@ class ScheduleTests(CliCase):
         code, _ = self.schedule(returncode=1, stderr="ERROR: Access is denied.")
         self.assertEqual(code, 1)
         self.assertIn("Task Scheduler refused: ERROR: Access is denied.", self.err)
-        self.assertIn("run cli.py collect at least weekly yourself", self.err)
+        self.assertIn("run asgard baldur collect at least weekly yourself", self.err)
         for args, why in ((("--day", "FUNDAY"), "--day is one of"), (("--time", "25:00"), "--time is like 09:00")):
             code, run = self.schedule(*args)
             self.assertEqual(code, 1, args)

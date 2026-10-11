@@ -1,8 +1,8 @@
 # Refinements spec: moved meetings, Muninn hardening, settling posts, Baldur's tests, Ysildir's tile (2026-10-10)
 
-Branch `claude/ci-and-odin-tests`, from `main` after PR #2 and #3. Brandon asked for the four refinements a survey of the code found, specified here first and then built in this order: 1b, 1a, 2, 3, 4a, 4b. Each step ends with tests, the docs it touches, and CI green. Steps 1a, 1b and 2 change how Odin writes to Jira, what counts as an agent estimate, or posting, so they get an independent review before they're called done (`AGENTS.md`).
+Branch `claude/ci-and-odin-tests`, from `main` after PR #2 and #3. The owner asked for the four refinements a survey of the code found, specified here first and then built in this order: 1b, 1a, 2, 3, 4a, 4b. Each step ends with tests, the docs it touches, and CI green. Steps 1a, 1b and 2 change how Odin writes to Jira, what counts as an agent estimate, or posting, so they get an independent review before they're called done (`AGENTS.md`).
 
-Decision taken (Brandon, Oct 10, "unless you say otherwise"): Odin keeps its rule of never editing a Jira issue. A moved meeting is recognised and reported; its sub-task and worklog are left as they are.
+Decision taken (the owner, Oct 10, "unless you say otherwise"): Odin keeps its rule of never editing a Jira issue. A moved meeting is recognised and reported; its sub-task and worklog are left as they are.
 
 ## 1. Before 0.4.0 freezes the migrations
 
@@ -88,7 +88,7 @@ It takes Odin's run lock, so it never races a run. `odin status` lists each post
 
 **Why.** `docs/baldur-spec.md` and `docs/muninn-design.md` are snapshots of live Claude artifacts. Their headers list edits made in the repo since Oct 4 that never reached the live pages, which are meant to be the source of truth.
 
-**What changes.** Each live artifact is read first. If it hasn't changed since the snapshot was taken, the snapshot's current text is published to it. If it has edits of its own, they're merged by hand with the snapshot's, and both are kept; nothing is lost. The snapshot headers then say the live pages are current. If an artifact can't be read or written from this session, it's left for Brandon and the hand-off says so.
+**What changes.** Each live artifact is read first. If it hasn't changed since the snapshot was taken, the snapshot's current text is published to it. If it has edits of its own, they're merged by hand with the snapshot's, and both are kept; nothing is lost. The snapshot headers then say the live pages are current. If an artifact can't be read or written from this session, it's left for the owner and the hand-off says so.
 
 **Done when.** Both live pages match their snapshots, or the reason they don't is written down.
 

@@ -3,7 +3,7 @@
     {
       "app": "heimdall",
       "name": "Heimdall",
-      "subtitle": "SeCcHm submissions",
+      "subtitle": "Security change submissions",
       "theme": {"accent": "#5B4B9A"},
       "backend": "heimdall.ui_backend:Backend",
       "views": [
@@ -14,7 +14,30 @@
 
 The backend is a plain Python class: no Qt. The shell wraps it in a bridge, and the app's QML
 calls its methods (bridge.call("state", [])). Optional methods the shell looks for:
-dashboard() -> list of cards, settings_files() -> list of {label, path}.
+
+    dashboard()        -> [{label, value, detail, tone, view}]       cards on the Dashboard
+    settings_files()   -> [{label, path}]                            files to open from Settings
+    settings_schema()  -> [{title, help, fields: [...]}]             the app's own Settings section
+    settings_values()  -> {"jira.base_url": "...", ...}              what those fields hold now
+    set_settings({key: value, ...}) -> {"message"} | {"error"}       save them
+
+An app that offers the last three gets its settings edited in the window instead of by hand. Each
+field is {"key", "label", "help", "kind"} plus what its kind needs:
+
+    text      optional "placeholder"
+    number    "min", "max", optional "step" and "unit"
+    bool      -
+    choice    "options": [{"value", "label"}]
+    list      a list of strings, one per line in the window
+    time      24-hour "HH:MM"
+
+Rules the shell relies on:
+- The keys are dotted paths into the app's own settings file, and the app decides what is editable.
+  Anything it leaves out (Odin's rules and templates, say) stays a file-only setting.
+- set_settings validates through the app's own validator and writes nothing if it refuses, so the
+  message can be shown and the control put back. It may be given one key or several.
+- Reading is cheap and may be called on every repaint; set_settings is called when a control is
+  used, so it does the writing.
 
 Rules it keeps:
 - A broken manifest skips that app with a warning; the window still opens for the others.

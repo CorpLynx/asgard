@@ -71,12 +71,12 @@ class SetupTests(CollectBase, CliCase):
         self.assertIn("isn't a folder", self.err)
 
     def test_the_email_comes_from_git_config(self):
-        (self.dir / "gitconfig").write_text("[user]\n\temail = Brandon.Doe@agency.gov\n")
+        (self.dir / "gitconfig").write_text("[user]\n\temail = Dev.Doe@agency.gov\n")
         self.con.execute("DELETE FROM identities WHERE kind = 'git_email'")
         self.assertEqual(self.cli("setup"), 0)
-        self.assertIn("cli.py setup --from-git   (git config says Brandon.Doe@agency.gov)", self.out)
+        self.assertIn("cli.py setup --from-git   (git config says Dev.Doe@agency.gov)", self.out)
         self.assertEqual(self.cli("setup", "--from-git"), 0, self.err)
-        self.assertEqual(muninn.identities(self.con, "git_email"), {"brandon.doe@agency.gov"})
+        self.assertEqual(muninn.identities(self.con, "git_email"), {"dev.doe@agency.gov"})
 
     def test_without_an_email_in_git_config_it_says_how_to_give_one(self):
         self.con.execute("DELETE FROM identities WHERE kind = 'git_email'")
@@ -91,7 +91,7 @@ class SetupTests(CollectBase, CliCase):
     def test_removing_an_email_takes_its_commits_away(self):
         self.setup_baldur()
         self.commit(t(1, 10), "PROJ-1")
-        self.assertEqual(self.cli("setup", "--remove-email", "brandon@agency.gov"), 0, self.err)
+        self.assertEqual(self.cli("setup", "--remove-email", "dev@agency.gov"), 0, self.err)
         self.assertIn("1 commit no longer counts as yours", self.out)
         self.assertEqual(self.con.execute("SELECT count(*) FROM commits WHERE is_mine = 1").fetchone()[0], 0)
 

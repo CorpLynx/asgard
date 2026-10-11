@@ -2,6 +2,10 @@
 
 Click a tile to open its app. Right-click (or the Menu key) for more.
 Type to search, arrow keys to move, Enter to open, F5 to reload tiles.
+
+main() opens the PySide6 + QML window (asgard/ui, the Apps page) when PySide6 loads on this computer,
+and this tkinter window when it doesn't, so a Python install without IT's PySide6 still gets a launcher.
+Set ASGARD_UI=tk to force the tkinter window.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import __version__, catalog, paths, winutil
 from .catalog import COMING_SOON, MISSING, NEEDS_SETUP, READY, App, CatalogError
 from .runner import LaunchError, Runner, log_tail
+from .ui import prefs as ui_prefs        # standard library only: the banner's settings, shared with the Qt window
 
 try:
     from . import muninn
@@ -106,6 +111,111 @@ def fit_lines(font: "tkfont.Font", text: str, width: int, max_lines: int) -> Lis
 
 
 # --------------------------------------------------------------------------
+# The warning banner
+# --------------------------------------------------------------------------
+
+class Banner:
+    """A yellow strip whose text scrolls and pulses red, with a hazard edge facing the page.
+
+    Same settings and colours as the Qt window's WarningBanner (settings\\ui.json "banner").
+    Click it to pause. With animate off the text holds still in one colour.
+    """
+    FRAME_MS = 33
+    GAP = 96
+
+    def __init__(self, root: "tk.Tk", px: Any, families: Any, side: str, reverse: bool) -> None:
+        self.root, self.px, self.side, self.reverse = root, px, side, reverse
+        self.colors = ui_prefs.BANNER_COLORS
+        self.canvas = tk.Canvas(root, height=px(30), bg=self.colors["background"], highlightthickness=0, bd=0,
+                                cursor="hand2")
+        self.families = families
+        self.cfg = ui_prefs.Banner()
+        self.font: Optional["tkfont.Font"] = None
+        self.items: List[int] = []
+        self.offset = 0.0
+        self.unit = 1.0
+        self.paused = False
+        self._job: Optional[str] = None
+        self._last = time.monotonic()
+        self._started = time.monotonic()
+        # Packed once, before the header and footer, so it stays at the window's edge; hiding it
+        # collapses it to zero height rather than unpacking, which would lose that order.
+        self.canvas.pack(side=side, fill="x")
+        self.canvas.bind("<Configure>", lambda e: self._layout())
+        self.canvas.bind("<Button-1>", lambda e: self.toggle_pause())
+
+    def apply(self, cfg: "ui_prefs.Banner") -> None:
+        self.cfg = cfg
+        family = ui_prefs.pick_banner_font(self.families, cfg.font) or "Courier"
+        self.font = tkfont.Font(root=self.root, family=family, size=11, weight="bold")
+        # Tk keeps a 1-pixel canvas at height 0; paint it the window colour so nothing shows.
+        self.canvas.configure(height=self.px(30) if cfg.shown else 0,
+                              bg=self.colors["background"] if cfg.shown else self.root.cget("bg"))
+        self._layout()
+        self._schedule()
+
+    def toggle_pause(self) -> None:
+        if self.cfg.animate:
+            self.paused = not self.paused
+            self._last = time.monotonic()
+
+    def _layout(self) -> None:
+        c, px = self.canvas, self.px
+        c.delete("all")
+        self.items = []
+        if not self.cfg.shown or self.font is None:
+            return
+        w, h = max(1, c.winfo_width()), px(30)
+        stripe = px(5)
+        top = 0 if self.side == "bottom" else h - stripe
+        for x in range(-px(10), w + px(14), px(14)):
+            c.create_polygon(x, top + stripe, x + px(7), top + stripe, x + px(11), top, x + px(4), top,
+                             fill=self.colors["stripe"], outline="")
+        cy = (h - stripe) / 2 + (stripe if self.side == "bottom" else 0)
+        text = self.cfg.text
+        if not self.cfg.animate:
+            self.items.append(c.create_text(w / 2, cy, text=text, font=self.font, fill=self.colors["still"]))
+            return
+        self.unit = max(1.0, self.font.measure(text) + px(self.GAP))
+        for i in range(int(w // self.unit) + 2):
+            self.items.append(c.create_text(i * self.unit, cy, text=text, font=self.font, anchor="w",
+                                            fill=self.colors["dim"]))
+        self._place()
+
+    def _place(self) -> None:
+        shift = -self.offset if not self.reverse else self.offset - self.unit
+        for i, item in enumerate(self.items):
+            self.canvas.coords(item, i * self.unit + shift, self.canvas.coords(item)[1])
+
+    def _schedule(self) -> None:
+        if self._job is None and self.cfg.shown and self.cfg.animate:
+            self._job = self.root.after(self.FRAME_MS, self._tick)
+
+    def _tick(self) -> None:
+        self._job = None
+        if not (self.cfg.shown and self.cfg.animate) or not self.items:
+            return
+        now = time.monotonic()
+        if not self.paused:
+            self.offset = (self.offset + self.cfg.speed * (now - self._last)) % self.unit
+            self._place()
+        self._last = now
+        phase = ((now - self._started) * 1000 % ui_prefs.BANNER_PULSE_MS) / ui_prefs.BANNER_PULSE_MS
+        ink = mix(self.colors["dim"], self.colors["bright"], (1 - math.cos(2 * math.pi * phase)) / 2)
+        for item in self.items:
+            self.canvas.itemconfigure(item, fill=ink)
+        self._schedule()
+
+    def stop(self) -> None:
+        if self._job:
+            try:
+                self.root.after_cancel(self._job)
+            except tk.TclError:
+                pass
+            self._job = None
+
+
+# --------------------------------------------------------------------------
 # The window
 # --------------------------------------------------------------------------
 
@@ -144,6 +254,7 @@ class LauncherWindow:
             "ASGARD_DATA": str(paths.data_dir()), "ASGARD_APP": str(paths.CODE_ROOT)})
         self._init_fonts()
         self._init_window()
+        self._build_banners()
         self._build_header()
         self._build_footer()
         self._build_grid()
@@ -208,6 +319,37 @@ class LauncherWindow:
         r.bind("<FocusIn>", self._on_app_focus, add="+")
         r.update_idletasks()
         winutil.set_dark_title_bar(r, self.dark)
+
+    def _build_banners(self) -> None:
+        """Top and bottom banners, packed before the header and footer so they sit at the window's edges."""
+        families = tkfont.families(self.root)
+        self.banners = [Banner(self.root, self.px, families, "top", reverse=False),
+                        Banner(self.root, self.px, families, "bottom", reverse=True)]
+        self._load_banner_prefs()
+
+    def _load_banner_prefs(self) -> None:
+        self.ui_prefs = ui_prefs.load()
+        for banner in self.banners:
+            banner.apply(self.ui_prefs.banner)
+
+    def _edit_banner(self) -> None:
+        from tkinter import simpledialog
+        text = simpledialog.askstring("Banner", "Message for the banners (empty hides them):",
+                                      initialvalue=self.ui_prefs.banner.text, parent=self.root)
+        if text is None:
+            return
+        self._save_banner(text=ui_prefs.clean_banner_text(text))
+
+    def _save_banner(self, **changes: Any) -> None:
+        current = ui_prefs.load()
+        for key, value in changes.items():
+            setattr(current.banner, key, value)
+        try:
+            current.save()
+        except (ui_prefs.PrefsError, OSError) as exc:
+            messagebox.showerror("Asgard", str(exc), parent=self.root)
+            return
+        self._load_banner_prefs()
 
     def _build_header(self) -> None:
         p, px = self.p, self.px
@@ -683,6 +825,13 @@ class LauncherWindow:
                          state="normal" if self.muninn_status is not None else "disabled")
         menu.add_command(label="About Asgard", command=self._about)
         menu.add_separator()
+        b = self.ui_prefs.banner
+        menu.add_command(label="Edit banner text…", command=self._edit_banner)
+        menu.add_command(label=("Hide banners" if b.enabled else "Show banners"),
+                         command=lambda: self._save_banner(enabled=not b.enabled))
+        menu.add_command(label=("Stop banner scrolling" if b.animate else "Scroll banners"),
+                         command=lambda: self._save_banner(animate=not b.animate))
+        menu.add_separator()
         menu.add_command(label="Uninstall Asgard…", command=lambda: self._internal("uninstall"))
         b = self.menu_button
         try:
@@ -812,6 +961,8 @@ class LauncherWindow:
                              f"{exc}\n\nDetails are in {paths.log_dir() / 'launcher.log'}", parent=self.root)
 
     def close(self) -> None:
+        for banner in getattr(self, "banners", []):
+            banner.stop()
         for job in (self._poll_job, self._flash_job, self._badge_job):
             if job:
                 try:
@@ -835,6 +986,31 @@ def write_launcher_log(text: str) -> None:
         pass
 
 
+def qt_available() -> bool:
+    """Whether the Qt window can open here: PySide6 loads (a blocked DLL counts as not), and it wasn't switched off."""
+    if os.environ.get("ASGARD_UI", "").strip().lower() in ("tk", "tkinter"):
+        return False
+    from . import ui                      # imports no package itself; ui.available() tries PySide6
+    ok, why = ui.available()
+    if not ok:
+        write_launcher_log(f"The Qt window isn't available ({why}); using the tkinter window.")
+    return ok
+
+
+def run_qt() -> Optional[int]:
+    """The Qt window's exit code, or None if it couldn't be built so the tkinter window can take over."""
+    try:
+        from . import ui
+        code = ui.run(home=True)
+    except Exception:  # last resort: a launcher that opens beats one that doesn't
+        write_launcher_log("The Qt window failed:\n" + traceback.format_exc())
+        return None
+    if code == 0:
+        return 0
+    write_launcher_log(f"The Qt window ended with exit code {code}; using the tkinter window instead.")
+    return None
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if "--uninstall" in args:
@@ -843,16 +1019,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args[:1] == ["--muninn"]:              # console commands; no window, no tkinter needed
         from .muninn import cli as muninn_cli
         return muninn_cli.main(args[1:])
-    if tk is None:
-        message = "Asgard needs Python with Tcl/Tk (tkinter). Ask IT for a Python install that includes Tcl/Tk."
-        write_launcher_log(message)
-        print(message, file=sys.stderr)
-        return 2
     try:
         paths.data_dir().mkdir(parents=True, exist_ok=True)
         os.chdir(paths.data_dir())  # never hold the app folder open, so upgrades can replace it
     except OSError:
         pass
+    if qt_available():
+        code = run_qt()
+        if code is not None:
+            return code
+    if tk is None:
+        message = ("Asgard needs PySide6 (the modern window) or Python with Tcl/Tk (tkinter). "
+                   "Ask IT for a Python install that includes Tcl/Tk.")
+        write_launcher_log(message)
+        print(message, file=sys.stderr)
+        return 2
     winutil.enable_dpi_awareness()
     try:
         root = tk.Tk()

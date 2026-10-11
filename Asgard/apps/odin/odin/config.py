@@ -29,6 +29,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import tempfile
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -182,10 +183,15 @@ def asgard_dir() -> Path:
 
 
 def legacy_data_dirs() -> List[Path]:
-    """Where Odin kept its files before they moved under Asgard (Oct 2026)."""
+    """Where Odin kept its files before they moved under Asgard (Oct 2026), newest naming first.
+
+    Two folders came before %LOCALAPPDATA%\\Asgard\\odin: the on-premises install kept its files in
+    %LOCALAPPDATA%\\odin (and before that, %LOCALAPPDATA%\\meeting2jira). Both are looked for: missing
+    one leaves its state.db behind, and a run with no history re-creates every meeting ever synced.
+    """
     base = os.environ.get("LOCALAPPDATA")
     if base:
-        return [Path(base) / "meeting2jira"]
+        return [Path(base) / "odin", Path(base) / "meeting2jira"]
     return [Path.home() / ".meeting2jira", Path.home() / "meeting2jira"]
 
 
@@ -210,17 +216,25 @@ def move_legacy_data(target: Path) -> Optional[Path]:
                     "if it holds nothing you need), then run again. Running now would re-create every "
                     "meeting already synced.")
         return None
-    for old in legacy_data_dirs():
-        if old.is_dir():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                os.replace(old, target)
-            except OSError as exc:
-                raise ConfigError(
-                    f"Odin's files are moving to {target}, but {old} couldn't be moved ({exc}). Close "
-                    "anything using it (Odin's window, a sync that's running, a log open in an editor) and "
-                    "run again.") from None
-            return old
+    present = [old for old in legacy_data_dirs() if old.is_dir()]
+    if len(present) > 1:
+        # Two old folders, so which one holds the history is a guess. Guessing wrong leaves a state.db
+        # behind, and the first run without it re-creates every meeting already synced.
+        where = " and ".join(str(p) for p in present)
+        raise ConfigError(
+            f"Odin found two of its old folders ({where}) and can't tell which to keep. Move the one "
+            f"with the newest state.db to {target} yourself, check the other holds nothing you need, "
+            "then run again.")
+    for old in present:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.replace(old, target)
+        except OSError as exc:
+            raise ConfigError(
+                f"Odin's files are moving to {target}, but {old} couldn't be moved ({exc}). Close "
+                "anything using it (Odin's window, a sync that's running, a log open in an editor) and "
+                "run again.") from None
+        return old
     return None
 
 
@@ -228,8 +242,8 @@ def default_data_dir() -> Path:
     """Odin's files: %LOCALAPPDATA%\\Asgard\\odin, beside Asgard's (ASGARD_HOME\\odin when set).
 
     Odin is an Asgard app: its config, token, logs and exports sit beside Asgard's own files, and
-    its records are in Muninn. A folder from before
-    (%LOCALAPPDATA%\\meeting2jira) is moved here the first time.
+    its records are in Muninn. A folder from before (%LOCALAPPDATA%\\odin on the on-premises
+    install, or %LOCALAPPDATA%\\meeting2jira before that) is moved here the first time.
     """
     target = asgard_dir() / "odin"
     move_legacy_data(target)
@@ -278,6 +292,59 @@ def build_config(overrides: Dict[str, Any]) -> Dict[str, Any]:
     """Defaults + overrides, validated. Used by tests and tooling."""
     cfg = _merge(DEFAULTS, _strip_comments(overrides))
     validate(cfg)
+    return cfg
+
+
+def set_values(changes: Dict[str, Any], path: Optional[Path] = None) -> Dict[str, Any]:
+    """Change settings by dotted key ("jira.base_url", "muninn.post_approved") and save the file.
+
+    What it keeps to:
+    - The file stays the person's: the comments ("_" keys) and anything this doesn't touch are left
+      exactly as they were, and a key whose value equals the default is still written, because they
+      asked for it.
+    - Nothing is written until the whole config passes validate(), so one bad value can't leave a file
+      Odin then refuses to start from. The ConfigError says what to change.
+    - One temporary file and a rename, so a crash can't leave half a config behind.
+    Returns the saved config (defaults merged in), as load_config would.
+    """
+    path = Path(path) if path else default_config_path()
+    try:
+        with open(path, encoding="utf-8-sig") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        raw = {}
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"{path} is not valid JSON ({exc}), so it wasn't changed. Fix the file first.") from None
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{path} must hold a JSON object, so it wasn't changed.")
+    updated = copy.deepcopy(raw)
+    for dotted, value in changes.items():
+        parts = str(dotted).split(".")
+        if not all(parts) or any(p.startswith("_") for p in parts):
+            raise ConfigError(f"{dotted!r} isn't a setting name.")
+        here = updated
+        for part in parts[:-1]:
+            nested = here.get(part)
+            if not isinstance(nested, dict):
+                nested = {}
+                here[part] = nested
+            here = nested
+        here[parts[-1]] = value
+    cfg = build_config(updated)              # raises ConfigError before anything is written
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Its own temporary file, so two writers (the window reads settings from more than one thread)
+    # can't have one rename a file the other already took.
+    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
+            json.dump(updated, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    cfg["data_dir"] = str(path.parent)
     return cfg
 
 

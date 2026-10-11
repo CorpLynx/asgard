@@ -28,7 +28,7 @@ py -3 asgard\install.py
 
 If `py` isn't found, use `python asgard\install.py`.
 
-You need Python 3.9 or newer with Tcl/Tk (tkinter); Muninn needs 3.11 or newer on Windows, for its SQLite. Most catalog Python installs include Tcl/Tk. `tools\asgard_preflight.ps1` checks this, along with the policies that affect the other apps.
+You need Python 3.9 or newer; Muninn needs 3.11 or newer on Windows, for its SQLite. Asgard opens in its modern window when PySide6 loads (the packaged build has it, and so does a Python install where IT has added the approved PySide6-Essentials). Without PySide6 it falls back to a simpler window that needs Python with Tcl/Tk (tkinter), which most catalog Python installs include; set `ASGARD_UI=tk` to force that one. `tools\asgard_preflight.ps1` checks this, along with the policies that affect the other apps.
 
 ### Install the packaged build
 
@@ -43,6 +43,7 @@ To upgrade, close Asgard, extract the new zip and run its setup: it replaces `%L
 
 ## Using Asgard
 
+- **Settings** holds Asgard's own look and each app's settings: Odin's Jira address, which meetings count, its tour of duty; Baldur's repository folders, how a day is estimated, your working hours. Changing one saves it straight away, and the app's own rules decide: a value it won't take is refused with the reason, and nothing is written. Rules and templates are still edited in the file, which the same page opens.
 - **Click a tile** to open the app. Tiles marked **Coming soon** aren't built yet.
 - **Odin** ships with Asgard. Its tile opens Today (setup, the last run, what waits), Meetings and My issues; see [Odin](#odin-meetings-and-jira) below.
 - **Right-click a tile** to change its location, open its folder, or view its log.
@@ -160,7 +161,7 @@ Odin is the only app that writes to Jira. Every weekday it turns the meetings yo
 
 Other commands: `odin status` (the last run, recent sub-tasks, what waits), `odin sync` (Jira into Muninn only), `odin post` (approved Baldur days only; `post --dry-run` lists them), `odin csv FILE` (from an Outlook CSV export instead of Outlook), `odin report` (every sub-task as a CSV for Power BI), `odin doctor` (what this computer allows), `odin settle` (posts Odin sent but never heard back about: `odin settle ID` asks Jira again, and `--posted WORKLOG` or `--not-posted` records what you found in Jira yourself), `odin cli forget PROJ-123` (push that meeting again: delete the sub-task in Jira first, or the next run finds it and records it again). A hidden run that fails leaves `ATTENTION-Odin.txt` on your Desktop until a run works again.
 
-Moving from meeting2jira: your config, token and logs move from `%LOCALAPPDATA%\meeting2jira` to `%LOCALAPPDATA%\Asgard\odin` the first time Odin runs, and its record of which meetings have sub-tasks (`state.db`) moves into Muninn on the first real run, so nothing is created again. `odin schedule` replaces the old `meeting2jira-daily` task. How it works, and what protects Jira: [docs/integration/odin.md](docs/integration/odin.md).
+Moving from an older Odin: your config, token and logs move from `%LOCALAPPDATA%\odin` (or `%LOCALAPPDATA%\meeting2jira`, if you go back that far) to `%LOCALAPPDATA%\Asgard\odin` the first time Odin runs, and its record of which meetings have sub-tasks (`state.db`) moves into Muninn on the first real run, so nothing is created again. `odin schedule` replaces the old `meeting2jira-daily` task. How it works, and what protects Jira: [docs/integration/odin.md](docs/integration/odin.md).
 
 ## Ysildir: Asgard for your AI client
 
@@ -176,9 +177,23 @@ ysildir.cmd tools --on baldur_day              turn a tool on, then restart the 
 
 Each tool's data flow needs your ISSO's approval, so each has a switch in `%LOCALAPPDATA%\Asgard\settings\ysildir.json`. Tools that send Muninn data (commit subjects, Jira summaries, times) start off. [docs/integration/ysildir.md](docs/integration/ysildir.md) lists every tool, what it sends and its command-line equivalent.
 
+## Trying Odin with no Jira
+
+A pretend Jira runs on your own machine, so Odin can be tried end to end before it touches the real one:
+
+```
+python tools\fake_jira_server.py                     # prints the config to paste, and a token
+python tools\fake_jira_server.py --state jira.json   # keep what Odin creates across restarts
+```
+
+It listens on 127.0.0.1 only, needs the token it prints, and serves what Odin asks for: issues, JQL
+search, worklogs and transitions. Paste the config it shows into `%LOCALAPPDATA%\Asgard\odin\config.json`,
+set `JIRA_PAT` to the token, then `odin check`, `odin preview` and `odin push` all work against it.
+It is a development tool: it isn't Jira, and it isn't in the packaged build.
+
 ## Heimdall from the command line
 
-Heimdall fills a SeCcHm request in Edge from a saved template, then stops so you can review it and click **Submit** yourself. Its tile opens Heimdall's window (see below), which does everything these commands do; the commands also work on their own:
+Heimdall fills a security change request in Edge from a saved template, then stops so you can review it and click **Submit** yourself. Its tile opens Heimdall's window (see below), which does everything these commands do; the commands also work on their own:
 
 ```
 cd /d "%LOCALAPPDATA%\Asgard\app\apps\heimdall"
@@ -189,7 +204,7 @@ heimdall.cmd fill -t "Monthly scan" --dry-run
 heimdall.cmd fill -t "Monthly scan"
 ```
 
-- `init` creates the form file, `%LOCALAPPDATA%\Asgard\settings\heimdall.json`, from the example. Edit it once to match the SeCcHm form: `instance_url`, the catalog item's `catalog_sys_id` (the 32 characters after `sysparm_id=` or `sys_id=` in its address), and one entry per field with its label exactly as the form shows it and its `kind`: `text`, `select`, `reference` or `checkbox`. A field can also have `"required": true`, a `default`, or a `selector` when its label isn't enough to find it. `fields` shows what Heimdall read.
+- `init` creates the form file, `%LOCALAPPDATA%\Asgard\settings\heimdall.json`, from the example. Edit it once to match the security change form: `instance_url`, the catalog item's `catalog_sys_id` (the 32 characters after `sysparm_id=` or `sys_id=` in its address), and one entry per field with its label exactly as the form shows it and its `kind`: `text`, `select`, `reference` or `checkbox`. A field can also have `"required": true`, a `default`, or a `selector` when its label isn't enough to find it. `fields` shows what Heimdall read.
 - **Templates** are saved combinations of values for those fields. `template save NAME --set "LABEL=VALUE"` creates one; `template list`, `show`, `edit` (`--set`, `--unset`, `--attachment`, `--no-attachment`, `--rename`) and `delete` manage them. Names and labels ignore capitals. Checkboxes take `true` or `false`. Values may use `$today` (2026-10-04) or `$today_us` (10/04/2026); write `$$` for a dollar sign. In PowerShell, put such values in single quotes, or PowerShell replaces `$today` before Heimdall sees it.
 - `fill` uses, for each field, the form's default, then the template's value, then any `--set` you add for this run. A field with no value anywhere is left as it is. `--attachment` or `--no-attachment` changes the attachment for this run only, and `--dry-run` shows the plan without opening Edge.
 - **What a fill does.** Heimdall opens Edge with its own profile and signs in the normal way: pick your certificate and enter your PIN if Edge asks. After the first time, the profile usually keeps you signed in. It opens the catalog item, fills each field, checks that each value took, attaches the file, and brings Edge to the front. Review the form, click **Submit**, then close the window.
@@ -210,13 +225,16 @@ Heimdall's tile opens Asgard's shared window: a sidebar with **Dashboard**, the 
 
 The window needs **PySide6-Essentials** (approved, pinned in `requirements.txt`) for the Python the tile uses. Without it the tile says what to install; the command-line tools don't need it.
 
+**The banner.** Asgard's own window has a yellow banner along the top and bottom with a message that scrolls and pulses red. Change the message under **Settings > Banner** (empty hides it), or turn off **Scroll and pulse** to keep it still. Click a banner, or Tab to it and press Space, to pause it. The tkinter window (used when PySide6 can't load) shows the same banners; its **...** menu has **Edit banner text**, **Hide banners** and **Stop banner scrolling**. The font is the first of OCR A Extended, Agency FB, Bahnschrift and Consolas that the computer has; set `"font"` to choose another. App windows such as Heimdall's don't show it.
+
 Your colour and text-size choices are in `%LOCALAPPDATA%\Asgard\settings\ui.json`, which you can also edit by hand:
 
 ```json
 {
   "mode": "dark",
   "theme": {"fontSize": 14},
-  "apps": {"heimdall": {"accent": "#6B4FBF"}, "odin": {"dark": {"accent": "#7FA7E8"}}}
+  "apps": {"heimdall": {"accent": "#6B4FBF"}, "odin": {"dark": {"accent": "#7FA7E8"}}},
+  "banner": {"text": "CHANGE FREEZE FRIDAY 1700", "enabled": true, "animate": true, "speed": 80, "font": ""}
 }
 ```
 
@@ -295,7 +313,7 @@ Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, or **... > 
 | `%LOCALAPPDATA%\Asgard\settings\baldur.json` | Baldur's settings |
 | `%LOCALAPPDATA%\Asgard\settings\ysildir.json` | Which Ysildir tools your AI client may use (`ysildir.cmd tools`). No file means the defaults; a file Ysildir can't read leaves only `asgard_guide` on |
 | `%LOCALAPPDATA%\Asgard\settings\ui.json` | Your choices for the shared window: mode, text size, colours |
-| `%LOCALAPPDATA%\Asgard\settings\heimdall.json` | Heimdall's form file: the SeCcHm catalog item and its fields |
+| `%LOCALAPPDATA%\Asgard\settings\heimdall.json` | Heimdall's form file: the security change catalog item and its fields |
 | `%LOCALAPPDATA%\Asgard\settings\heimdall-templates.json` | Your Heimdall templates. Heimdall won't overwrite this file if it can't read it |
 | `%LOCALAPPDATA%\Asgard\odin` | Odin's files: `config.json`, its DPAPI-protected Jira token, logs, calendar exports, `last_run.json`; its records are in Muninn. Odin moves its old `%LOCALAPPDATA%\meeting2jira` here the first time it runs, and keeps the old `state.db` as `state.db.migrated-DATE` for 30 days |
 | `%LOCALAPPDATA%\Asgard\heimdall\edge-profile` | The Edge profile Heimdall signs in with; delete it to sign out. Traces from `--trace` go in `heimdall\traces` |

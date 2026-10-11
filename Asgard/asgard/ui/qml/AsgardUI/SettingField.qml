@@ -2,7 +2,11 @@
 // needs, and the help under it. Saving goes straight to the app, which validates it; if the app refuses,
 // the message appears here and the control goes back to the stored value.
 //
-// Kinds: text, number, bool, choice, list, time (see asgard/ui/registry.py).
+// Kinds: text, number, bool, choice, list, time, secret (see asgard/ui/registry.py).
+//
+// A secret is write-only here: the app never hands one back, so the box starts empty and its value is
+// only ever "saved" or "". Typing one and leaving the box saves it; leaving it empty changes nothing;
+// Forget sends null, which tells the app to remove it.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -26,6 +30,14 @@ ColumnLayout {
     }
     function lines(v) {
         return (v === undefined || v === null || v === "") ? "" : (Array.isArray(v) ? v.join("\\n") : String(v))
+    }
+    // A secret leaves the box as soon as it is saved, so it is never sitting in the window.
+    function keep() {
+        if (secret.text === "")
+            return
+        var typed = secret.text
+        secret.text = ""
+        root.save(typed)
     }
 
     RowLayout {
@@ -140,6 +152,38 @@ ColumnLayout {
             onActiveFocusChanged: {
                 if (!activeFocus && text !== String(root.value === undefined || root.value === null ? "" : root.value))
                     root.save(text)
+            }
+        }
+
+        // ---- secret: never shown, only replaced or forgotten
+        RowLayout {
+            visible: root.kind === "secret"
+            Layout.alignment: Qt.AlignTop
+            spacing: 8
+            readonly property bool saved: String(root.value || "") !== ""
+            TextField {
+                id: secret
+                Layout.preferredWidth: 200
+                echoMode: TextInput.Password
+                passwordMaskDelay: 0
+                placeholderText: parent.saved ? "Saved; type to replace" : "Not set"
+                font.family: theme.fontFamily
+                font.pixelSize: theme.fontSize
+                Accessible.name: root.field.label
+                Accessible.description: parent.saved ? "A password is saved. Type a new one to replace it."
+                                                     : "No password is saved."
+                onAccepted: root.keep()
+                onActiveFocusChanged: if (!activeFocus) root.keep()
+            }
+            AppButton {
+                text: "Forget"
+                kind: "ghost"
+                visible: parent.saved
+                Accessible.name: "Forget the saved " + root.field.label
+                onClicked: {
+                    secret.text = ""
+                    root.save(null)
+                }
             }
         }
 

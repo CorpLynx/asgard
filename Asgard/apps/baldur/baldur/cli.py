@@ -23,15 +23,19 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from asgard import muninn, paths
 from asgard.muninn import baldur as approvals
 
-from . import agents, assist, calibrate, collect, desk, github, gitread, report, store
+from . import agents, assist, auto, calibrate, collect, desk, github, gitread, report, store
 from . import estimate as E
 from . import settings as config
 
 SCHEMA = (4, 5)     # 4: agent estimates, which the AI-assisted method reads and writes (v2, v3 and v5 need nothing)
 MAX_DAYS_BACK = 3650
-TASK_NAME = "Asgard Baldur collect"
+TASK_NAME = "Asgard Baldur refresh"
+# The task's name while it only collected. Registering or removing the new one takes it away, so the
+# two never both run (Odin's Register-MeetingSyncTask.ps1 does the same for its old name).
+OLD_TASK_NAME = "Asgard Baldur collect"
 ASGARD_COMMAND = paths.CODE_ROOT / "asgard" / "cli.py"     # asgard baldur ...: what the weekly task runs
 DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+CADENCES = ("DAILY", "WEEKLY")
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]+-[1-9][0-9]*$")
 
 
@@ -155,6 +159,12 @@ def cmd_setup(con: sqlite3.Connection, s: config.Settings, args: argparse.Namesp
         name, sep, value = item.partition("=")
         if not sep or name.strip() not in config.DEFAULTS:
             raise CliError(f"--set takes NAME=VALUE with a Baldur setting name, like policy=overlap; got {item!r}")
+        if name.strip() == "auto_approve":
+            # It has its own command, which says what it means and asks. A generic setter saying
+            # nothing is not the informed choice this one setting needs (review F3).
+            raise CliError("auto_approve isn't set this way, because it is the one setting that lets a figure "
+                           "reach Jira without you looking at that day. Read what it means and switch it on "
+                           "with: asgard baldur auto-approve --on   (or --off)")
         changes[name.strip()] = parse_value(value)
     if changes:
         s = config.update(changes)
@@ -223,6 +233,182 @@ def cmd_collect(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
     for r in result.failed:
         print(f"Baldur: {r.name} wasn't collected: {r.error}", file=sys.stderr)
     return 1 if result.failed else 0
+
+
+def cmd_refresh(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
+    """Read git, estimate the days it touched, and check GitHub: what the scheduled task runs.
+
+    Nothing here decides anything. It leaves days waiting for you to review, exactly as running
+    collect and estimate by hand does, so a scheduled run can never approve or post time.
+    """
+    problems: List[str] = []
+    collected = collect.collect(con, s)
+    new = sum(r.commits_new for r in collected.repos)
+    for r in collected.failed:
+        problems.append(f"{r.name} wasn't collected: {r.error}")
+    if not args.quiet:
+        count = len(collected.repos)
+        print(f"Read {count} {'repository' if count == 1 else 'repositories'}, "
+              f"{store.plural(new, 'new commit')}.")
+
+    # The days the new commits fall in, so a daily task doesn't re-estimate a fortnight each time.
+    first, last = date_range(args, args.days or 14)
+    result = store.run(con, s, first, last)
+    waiting = con.execute("SELECT count(DISTINCT local_date) FROM day_proposals WHERE status = 'proposed' "
+                          "AND work_item_key IS NOT NULL").fetchone()[0]
+    if not args.quiet:
+        changed = [c for c in result.changes if c.action in ("new", "updated")]
+        print(f"Estimated {first.isoformat()} to {last.isoformat()}: "
+              f"{store.plural(len(changed), 'proposal')} new or changed.")
+        print(f"{waiting} {'day' if waiting == 1 else 'days'} waiting for you: asgard baldur days")
+
+    if s.github_host():
+        try:
+            sync = desk.sync_github(con, s)
+        except (github.GitHubError, muninn.MuninnError, sqlite3.Error) as exc:
+            # GitHub is never allowed to be why a refresh failed: the estimates are the point.
+            problems.append(f"GitHub wasn't checked: {exc}")
+        else:
+            if sync is None:
+                problems.append("GitHub is on but no token is saved: asgard baldur github token")
+            else:
+                problems.extend(sync.problems)
+                if not args.quiet:
+                    print(f"Checked GitHub: {store.plural(sync.requests, 'review')} asked of you.")
+
+    approved = 0
+    # Both switches have to be on: this flag, which the agent guard matches, and the setting. The
+    # scheduled task always passes the flag, so the setting alone turns it on and off; with it off
+    # there is nothing to report, which is the ordinary case and not a problem.
+    if args.auto_approve and auto.enabled(s):
+        try:
+            found = auto.run(con, s, dry_run=False, unattended=True)
+        except (auto.AutoApproveError, desk.DeskError, muninn.MuninnError) as exc:
+            problems.append(str(exc))
+        else:
+            approved = sum(1 for c in found if c.approved)
+            if not args.quiet:
+                for line in auto.summary(found):
+                    print(line)
+
+    _log(f"refresh: {len(collected.repos)} repositories, {store.plural(new, 'new commit')}, "
+         f"{waiting} day(s) waiting, {approved} auto-approved" + "".join(f"; {p}" for p in problems))
+    for problem in problems:
+        print(f"Baldur: {problem}", file=sys.stderr)
+    return 1 if problems else 0
+
+
+APPLY_WARNING = (
+    "Approving is final. Baldur can't change a decision afterwards, only supersede it, and Odin\n"
+    "posts this time to Jira on its next run without asking again. Nothing in Asgard can take\n"
+    "posted time back: a figure you disagree with has to be fixed in Jira by hand.")
+
+AUTO_APPROVE_WARNING = (
+    "Auto-approve means Baldur approves its own figures for a day without you looking at it, and\n"
+    "Odin then posts that time to Jira on its next run. Approving is final, and nothing in Asgard\n"
+    "can take posted time back: a figure you disagree with has to be fixed in Jira by hand.\n"
+    "\n"
+    "It only ever uses the engine's own numbers. A day with AI-assisted figures, a weekend, a day\n"
+    "over your tour of duty or any day the report flags is still left for you, and a day waits\n"
+    "{min_age} day(s) first so late commits are in. At most {cap} day(s) are approved per run.\n")
+
+
+def cmd_plan(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
+    """What apply would approve, and why it is leaving the rest to you. Decides nothing."""
+    found = auto.run(con, s, dry_run=True)
+    for line in auto.summary(found, dry_run=True):
+        print(line)
+    if any(c.ok for c in found):
+        print("\nApprove these: asgard baldur apply")
+    return 0
+
+
+def cmd_apply(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
+    """Show the plan, then approve it once you type YES. Typing it is the approval, so no setting
+    is needed: you are looking at the figures as you agree to them."""
+    found = auto.run(con, s, dry_run=True)
+    for line in auto.summary(found, dry_run=True):
+        print(line)
+    if not any(c.ok for c in found):
+        return 0
+    print("\n" + APPLY_WARNING)
+    if not args.yes and not _typed_yes("Type YES to approve these days: "):
+        print("Nothing was approved.")
+        return 0
+    done = auto.run(con, s, dry_run=False)
+    for line in auto.summary(done):
+        print(line)
+    _log(f"apply: {sum(1 for c in done if c.approved)} day(s) approved, "
+         f"{sum(1 for c in done if not c.ok)} left for the person")
+    return 0
+
+
+def _typed_yes(prompt: str) -> bool:
+    """Whether the person typed YES at a console. Anything else, or no console, means no."""
+    try:
+        interactive = sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError, OSError):
+        interactive = False
+    if not interactive:
+        raise CliError("Nothing was approved: this isn't a console, so Baldur can't ask you. Run it from a "
+                       "console window, or add --yes if you have read the plan above.")
+    try:
+        answer = input(prompt).strip()
+    except (EOFError, OSError, RuntimeError):
+        raise CliError("Nothing was approved: nothing could be read from the keyboard.") from None
+    if answer == "YES":
+        return True
+    if answer.lower() == "yes":
+        print("That has to be YES, in capitals, because approving can't be undone.")
+    return False
+
+
+def cmd_auto_approve(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
+    """Whether a scheduled run may apply the plan by itself, with nobody watching."""
+    if args.on or args.off:
+        return _switch_auto_approve(s, on=bool(args.on), yes=args.yes)
+    on = auto.enabled(s)
+    print(f"Auto-approve is {'on' if on else 'off'}: a scheduled refresh "
+          + ("approves the days that qualify, and Odin posts them."
+             if on else "approves nothing, and every day waits for you."))
+    print("See what would be approved: asgard baldur plan")
+    print(f"Change it: asgard baldur auto-approve {'--off' if on else '--on'}")
+    return 0
+
+
+def _switch_auto_approve(s: config.Settings, on: bool, yes: bool) -> int:
+    """Turn auto-approve on or off, saying plainly what on means before it is on."""
+    if not on:
+        config.update({"auto_approve": False})
+        print("Auto-approve is off. Every day waits for you again: asgard baldur days")
+        _log("auto-approve: switched off")
+        return 0
+    print(AUTO_APPROVE_WARNING.format(min_age=s.values["auto_approve_min_age_days"],
+                                      cap=s.values["auto_approve_max_days_per_run"]))
+    if not yes:
+        # A person at a console, or nothing. A pipe is not consent: `echo yes | ...` would have
+        # switched it on (review F4), and with no stdin at all input() raised RuntimeError rather
+        # than saying anything useful (F7).
+        try:
+            interactive = sys.stdin is not None and sys.stdin.isatty()
+        except (AttributeError, ValueError, OSError):
+            interactive = False
+        if not interactive:
+            raise CliError("Auto-approve wasn't switched on: this isn't a console, so Baldur can't ask you. "
+                           "Run it again from a console window, or add --yes if you have read the above.")
+        try:
+            if input("Type yes to switch auto-approve on: ").strip().lower() != "yes":
+                print("Left off; nothing changed.")
+                return 0
+        except (EOFError, OSError, RuntimeError):
+            raise CliError("Auto-approve wasn't switched on: nothing could be read from the keyboard. "
+                           "Run it again from a console, or add --yes if you have read the above.") from None
+    config.update({"auto_approve": True})
+    print("Auto-approve is on. Baldur approves qualifying days when a refresh runs, and Odin posts them.\n"
+          "See what it would do before it does: asgard baldur auto-approve --dry-run\n"
+          "Switch it off at any time: asgard baldur auto-approve --off")
+    _log("auto-approve: switched on")
+    return 0
 
 
 def cmd_repos(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
@@ -732,39 +918,60 @@ def cmd_github(con: sqlite3.Connection, s: config.Settings, args: argparse.Names
     return 0
 
 
-def schedule_command(day: str, at: str, remove: bool = False, python: Optional[str] = None) -> List[str]:
-    """The schtasks command that adds (or removes) the weekly collection for this user."""
+def schedule_command(day: str, at: str, remove: bool = False, python: Optional[str] = None,
+                     cadence: str = "WEEKLY") -> List[str]:
+    """The schtasks command that adds (or removes) this user's scheduled refresh.
+
+    It runs `refresh`: read git, estimate, check GitHub. Never a command that decides anything, so a
+    scheduled run leaves the days waiting for you (Baldur spec, "Baldur proposes, you approve").
+    """
     if remove:
         return ["schtasks", "/Delete", "/F", "/TN", TASK_NAME]
     exe = Path(python or sys.executable)
     quiet = exe.with_name("pythonw.exe")
     exe = quiet if quiet.exists() else exe
-    # The asgard command (asgard/cli.py): asgard baldur collect, with no console window.
+    # The asgard command (asgard/cli.py): asgard baldur refresh, with no console window.
+    # --auto-approve is always on the action, and the auto_approve setting decides whether it does
+    # anything, so switching it on or off later needs no new task.
+    tail = "refresh --quiet --auto-approve"
     if python is None and paths.FROZEN:        # the packaged build: Asgard.exe takes the command itself
-        action = f'"{paths.frozen_programs()[1]}" baldur collect --quiet'
+        action = f'"{paths.frozen_programs()[1]}" baldur {tail}'
     else:
-        action = f'"{exe}" "{ASGARD_COMMAND}" baldur collect --quiet'
+        action = f'"{exe}" "{ASGARD_COMMAND}" baldur {tail}'
     if len(action) > 261:
         raise CliError("The scheduled command would be longer than Windows allows (261 characters).")
     # /IT: run only while you're signed in, so no password is stored and no admin rights are needed.
-    return ["schtasks", "/Create", "/F", "/SC", "WEEKLY", "/D", day, "/ST", at, "/IT", "/TN", TASK_NAME, "/TR", action]
+    cmd = ["schtasks", "/Create", "/F", "/SC", cadence]
+    if cadence == "WEEKLY":                    # /D on a DAILY task would mean "every N days"
+        cmd += ["/D", day]
+    return cmd + ["/ST", at, "/IT", "/TN", TASK_NAME, "/TR", action]
 
 
 def cmd_schedule(con: sqlite3.Connection, s: config.Settings, args: argparse.Namespace) -> int:
     if os.name != "nt":
-        raise CliError("Scheduled collection uses Windows Task Scheduler. Run asgard baldur collect weekly here instead.")
+        raise CliError("Scheduled runs use Windows Task Scheduler. Run asgard baldur refresh here instead, "
+                       "at least weekly (git's reflog expires).")
+    cadence = args.cadence.upper()
+    if cadence not in CADENCES:
+        raise CliError(f"--cadence is one of {', '.join(c.lower() for c in CADENCES)}")
     day = args.day.upper()[:3]
     if day not in DAYS:
         raise CliError(f"--day is one of {', '.join(DAYS)}")
     if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", args.time):
         raise CliError("--time is like 09:00")
-    cmd = schedule_command(day, args.time, args.remove)
+    # The old collect-only task goes either way, so it can't keep running beside the new one.
+    subprocess.run(["schtasks", "/Delete", "/F", "/TN", OLD_TASK_NAME], capture_output=True, text=True,
+                   creationflags=0x08000000)
+    cmd = schedule_command(day, args.time, args.remove, cadence=cadence)
     done = subprocess.run(cmd, capture_output=True, text=True, creationflags=0x08000000)
     if done.returncode != 0:
         raise CliError("Task Scheduler refused: " + (done.stderr or done.stdout).strip()
-                       + "\nIf your computer blocks scheduled tasks, run asgard baldur collect at least weekly yourself.")
-    print("Removed the weekly collection." if args.remove
-          else f"Baldur will collect every {day} at {args.time} while you're signed in. "
+                       + "\nIf your computer blocks scheduled tasks, run asgard baldur refresh at least weekly "
+                         "yourself (git's reflog expires).")
+    when = "every day" if cadence == "DAILY" else f"every {day}"
+    print("Removed the scheduled refresh." if args.remove
+          else f"Baldur will read git, estimate and check GitHub {when} at {args.time} while you're signed in. "
+               f"It decides nothing: the days wait for you in asgard baldur days. "
                f"Results go to {paths.log_dir() / 'baldur.log'}.")
     return 0
 
@@ -815,6 +1022,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("paths", nargs="*", metavar="REPO", help="only these repositories")
     p.add_argument("--full", action="store_true", help="read all of each repository's history, not just the last history_days")
     p.add_argument("--quiet", action="store_true", help="print only problems (for a scheduled task)")
+
+    p = add("refresh", cmd_refresh, "Read git, estimate, and check GitHub (what the scheduled task runs)")
+    ranged(p)
+    p.add_argument("--quiet", action="store_true", help="print only problems (for a scheduled task)")
+    p.add_argument("--auto-approve", action="store_true",
+                   help="also approve the engine's figures for days nothing is odd about, if you have "
+                        "switched auto_approve on (it does nothing otherwise)")
+
+    add("plan", cmd_plan, "Show what apply would approve, and why the rest waits for you")
+
+    p = add("apply", cmd_apply, "Approve what plan shows, once you type YES")
+    p.add_argument("--yes", action="store_true", help="don't ask; I have read the plan")
+
+    p = add("auto-approve", cmd_auto_approve, "Whether a scheduled run may apply the plan by itself")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--on", action="store_true", help="let scheduled runs apply it (says what that means first)")
+    group.add_argument("--off", action="store_true", help="switch it off; every day waits for you again")
+    p.add_argument("--yes", action="store_true", help="with --on: don't ask, I have read what it means")
 
     p = add("repos", cmd_repos, "List repositories, or switch one off or on")
     p.add_argument("--off", action="append", default=[], metavar="REPO", help="leave out of estimates")
@@ -913,8 +1138,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("action", nargs="?", choices=("status", "sync", "token"), default="status")
     p.add_argument("--remove", action="store_true", help="with token: remove the saved token")
 
-    p = add("schedule", cmd_schedule, "Collect weekly with a scheduled task for you (Windows)")
-    p.add_argument("--day", default="MON", help="MON to SUN (default MON)")
+    p = add("schedule", cmd_schedule, "Refresh daily or weekly with a scheduled task for you (Windows)")
+    p.add_argument("--cadence", default="weekly", help="daily or weekly (default weekly)")
+    p.add_argument("--day", default="MON", help="MON to SUN, for a weekly task (default MON)")
     p.add_argument("--time", default="09:00", help="24-hour time (default 09:00)")
     p.add_argument("--remove", action="store_true")
     return parser
@@ -952,7 +1178,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         return int(args.func(con, s, args) or 0)
     except (CliError, collect.CollectError, muninn.MuninnError, config.SettingsError, gitread.GitError,
-            github.GitHubError, desk.DeskError, calibrate.CalibrationError, assist.AssistError) as exc:
+            github.GitHubError, desk.DeskError, calibrate.CalibrationError, assist.AssistError,
+            auto.AutoApproveError) as exc:
         print(f"Baldur: {exc}", file=sys.stderr)
         return 1
     except sqlite3.Error as exc:

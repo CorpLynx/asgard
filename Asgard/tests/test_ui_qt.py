@@ -385,7 +385,7 @@ class WindowTests(unittest.TestCase):
         """The page is built from what the backends declare, so a new field needs no QML change."""
         s = self.open()
         sections = s.prefs_ctl.appSettings
-        self.assertEqual([x["app"] for x in sections], ["baldur", "odin"])
+        self.assertEqual([x["app"] for x in sections], ["baldur", "heimdall", "odin"])
         for section in sections:
             with self.subTest(section["app"]):
                 self.assertTrue(section["groups"])
@@ -393,6 +393,11 @@ class WindowTests(unittest.TestCase):
                 self.assertTrue(keys)
                 for key in keys:
                     self.assertIn(key, section["values"])
+                for group in section["groups"]:
+                    for field in group["fields"]:
+                        if field["kind"] == "secret":
+                            self.assertIn(section["values"][field["key"]], ("", "saved"),
+                                          "a secret is never handed to the window")
 
         self.assertEqual(s.prefs_ctl.setAppSetting("baldur", "history_days", 200), "")
         self.assertEqual(next(x for x in s.prefs_ctl.appSettings if x["app"] == "baldur")

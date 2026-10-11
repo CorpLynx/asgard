@@ -16,7 +16,7 @@ from pathlib import Path
 from string import Template
 from typing import Any, Dict, List, Optional, Tuple
 
-from asgard import paths
+from asgard import jsonfile, paths
 
 from . import variables
 
@@ -52,6 +52,7 @@ class Form:
     path: Path
     instance_url: str
     catalog_sys_id: str
+    username: str
     ui: str
     ready_label: Optional[str]
     ready_selector: Optional[str]
@@ -150,10 +151,14 @@ def parse(raw: Dict[str, Any], path: Path) -> Form:
         return value
 
     profile = raw.get("profile_dir")
+    username = str(raw.get("username", "")).strip()
+    if any(ch.isspace() for ch in username):
+        raise FormError(f'{where}: "username" is one word, the name you sign in to ServiceNow with.')
     return Form(
         path=path,
         instance_url=base,
         catalog_sys_id=sys_id,
+        username=username,
         ui=ui,
         ready_label=ready_label,
         ready_selector=ready_selector,
@@ -213,3 +218,59 @@ def render(value: Any, values: Dict[str, str]) -> Any:
 
 def _fold(label: str) -> str:
     return " ".join(label.split()).casefold()
+
+
+# What the window may edit, with the value a fresh form file would have. "fields" isn't here: the
+# form's fields are a list of objects, so they stay a file-only setting the page offers to open.
+EDITABLE: Dict[str, Any] = {
+    "instance_url": "",
+    "catalog_sys_id": "",
+    "username": "",
+    "ui": "classic",
+    "channel": "msedge",
+    "sign_in_timeout_s": 300,
+    "attempts": 3,
+}
+
+
+def set_values(changes: Dict[str, Any], path: Optional[Path] = None) -> Path:
+    """Change some settings in the form file, keeping everything else in it.
+
+    The file's comments (any key starting with "_") are kept, the whole form is validated before
+    anything is written, and the write goes through asgard.jsonfile. So one bad value can't leave a
+    file Heimdall then refuses to load, and the window's reads can't catch a half-written file.
+    """
+    path = Path(path) if path else form_path()
+    raw: Dict[str, Any] = {}
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise FormError(f"{path} isn't valid JSON ({exc}), so it isn't safe to change. Fix it first.") from None
+        if not isinstance(raw, dict):
+            raise FormError(f"{path} must hold a JSON object.")
+    else:
+        raw = json.loads(EXAMPLE.read_text(encoding="utf-8-sig"))
+    unknown = sorted(set(changes) - set(EDITABLE))
+    if unknown:
+        raise FormError(f"{', '.join(unknown)} isn't a setting the window edits.")
+    for key, value in changes.items():
+        raw[key] = value
+    parse(raw, path)                 # the whole file has to be usable, not just the keys that moved
+    jsonfile.write_json(path, raw)
+    return path
+
+
+def values(path: Optional[Path] = None) -> Dict[str, Any]:
+    """What the editable settings hold now, falling back to EDITABLE when there's no usable file."""
+    out = dict(EDITABLE)
+    path = Path(path) if path else form_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return out
+    if isinstance(raw, dict):
+        for key in EDITABLE:
+            if raw.get(key) is not None:
+                out[key] = raw[key]
+    return out

@@ -28,7 +28,7 @@ import fake_github as f  # noqa: E402
 from asgard import muninn, paths  # noqa: E402
 from baldur import cli, github  # noqa: E402
 from baldur import settings as config  # noqa: E402
-from test_baldur import CollectBase, MuninnCase, t  # noqa: E402
+from test_baldur import DAY, CollectBase, MuninnCase, t  # noqa: E402
 
 
 class CliCase(MuninnCase):
@@ -142,6 +142,362 @@ class CollectCommandTests(CollectBase, CliCase):
         self.setup_baldur(repo_roots=[str(empty)])
         self.assertEqual(self.cli("collect"), 0, self.err)
         self.assertIn("No repositories found under " + str(empty.resolve()), self.out)
+
+
+class AutoApproveTests(CliCase):
+    """Auto-approve: the engine's figures for days nothing is odd about, and only when switched on.
+
+    This is the one path where a figure reaches Jira without a person looking at that day, so each
+    guard rail gets its own test.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.worked_example()
+        self.setup_baldur(auto_approve=True, auto_approve_min_age_days=0)
+        self.run_store()                      # the day's proposals are now waiting to be reviewed
+
+    def approved(self):
+        return {r["work_item_key"]: r["minutes_final"] for r in self.con.execute(
+            "SELECT work_item_key, minutes_final FROM day_proposals WHERE status = 'approved'")}
+
+    def test_plan_shows_what_apply_would_do_and_decides_nothing(self):
+        """plan is Odin's shape: see it first, change nothing. It needs no setting and no console."""
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("plan"), 0, self.err)
+        self.assertIn("Would approve 1 day(s)", self.out)
+        self.assertIn("PROJ-42 1h30m", self.out)
+        self.assertIn("asgard baldur apply", self.out)
+        self.assertEqual(self.approved(), {})
+
+    def test_apply_shows_the_plan_then_needs_YES(self):
+        for typed, expect in (("", {}), ("no", {}), ("yes", {}), ("YES", {"PROJ-42": 90, "PROJ-51": 30})):
+            with self.subTest(typed=typed):
+                self.setUp()                   # a fresh day each time: a decision is final
+                self.assertEqual(self.cli("apply", stdin=self.console(typed + "\n")), 0, self.err)
+                self.assertIn("Would approve 1 day(s)", self.out)
+                self.assertIn("posts this time to Jira", self.out)
+                self.assertEqual(self.approved(), expect)
+                if typed == "yes":
+                    self.assertIn("has to be YES, in capitals", self.out)
+                if not expect:
+                    self.assertIn("Nothing was approved.", self.out)
+
+    def test_apply_needs_no_setting_because_typing_YES_is_the_approval(self):
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("apply", stdin=self.console("YES\n")), 0, self.err)
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 30})
+        self.assertIn("Approved 1 day(s)", self.out)
+
+    def test_apply_refuses_without_a_console_unless_you_pass_yes(self):
+        self.assertEqual(self.cli("apply", stdin=io.StringIO("YES\n")), 1)
+        self.assertIn("isn't a console", self.err)
+        self.assertEqual(self.approved(), {})
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 30})
+
+    def test_apply_says_so_when_there_is_nothing_to_approve(self):
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)       # nothing left
+        self.assertIn("Would approve 0 day(s)", self.out)
+        self.assertNotIn("posts this time to Jira", self.out)
+
+    def test_auto_approve_says_whether_the_schedule_may_do_it(self):
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("auto-approve"), 0, self.err)
+        self.assertIn("Auto-approve is off", self.out)
+        self.assertIn("every day waits for you", self.out)
+        self.assertIn("asgard baldur plan", self.out)
+        self.assertEqual(self.approved(), {})
+        self.assertFalse(config.DEFAULTS["auto_approve"], "it must ship off")
+        config.update({"auto_approve": True})
+        self.assertEqual(self.cli("auto-approve"), 0, self.err)
+        self.assertIn("Auto-approve is on", self.out)
+
+    def console(self, typed):
+        """A stdin that says it is a console, which is the only thing the prompt accepts."""
+        fake = io.StringIO(typed)
+        fake.isatty = lambda: True            # type: ignore[method-assign]
+        return fake
+
+    def test_switching_it_on_says_what_that_means_and_asks(self):
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("auto-approve", "--on", stdin=self.console("no\n")), 0, self.err)
+        self.assertIn("posts that time to Jira", self.out)
+        self.assertIn("nothing in Asgard\ncan take posted time back", self.out)
+        self.assertIn("Left off; nothing changed.", self.out)
+        self.assertFalse(config.load().auto_approve, "answering anything but yes leaves it off")
+
+        self.assertEqual(self.cli("auto-approve", "--on", stdin=self.console("yes\n")), 0, self.err)
+        self.assertTrue(config.load().auto_approve)
+        self.assertIn("Auto-approve is on.", self.out)
+
+        self.assertEqual(self.cli("auto-approve", "--off"), 0, self.err)
+        self.assertFalse(config.load().auto_approve)
+        self.assertIn("Every day waits for you again", self.out)
+
+    def test_a_pipe_is_not_consent(self):
+        """echo yes | baldur auto-approve --on must not switch it on: review F4."""
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("auto-approve", "--on", stdin=io.StringIO("yes\n")), 1)
+        self.assertIn("isn't a console", self.err)
+        self.assertFalse(config.load().auto_approve)
+
+    def test_setup_set_will_not_switch_it_on(self):
+        """A generic setter says nothing about what it means, so it isn't the way in: review F3."""
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("setup", "--set", "auto_approve=true"), 1)
+        self.assertIn("auto-approve --on", self.err)
+        self.assertFalse(config.load().auto_approve)
+        self.assertEqual(self.cli("setup", "--set", "poll_minutes=9"), 0, self.err)   # others still work
+        self.assertEqual(config.load().poll_minutes, 9)
+
+    def test_yes_skips_the_question_but_still_prints_what_it_means(self):
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("auto-approve", "--on", "--yes"), 0, self.err)
+        self.assertIn("posts that time to Jira", self.out)
+        self.assertTrue(config.load().auto_approve)
+
+    def test_it_refuses_rather_than_assume_yes_with_no_keyboard(self):
+        config.update({"auto_approve": False})
+        with mock.patch.object(cli, "input", side_effect=EOFError, create=True):
+            self.assertEqual(self.cli("auto-approve", "--on", stdin=self.console("")), 1)
+        self.assertIn("nothing could be read from the keyboard", self.err)
+        self.assertFalse(config.load().auto_approve)
+
+    def test_no_stdin_at_all_is_a_message_not_a_traceback(self):
+        """pythonw and the frozen build have no stdin; input() raises RuntimeError there (review F7)."""
+        config.update({"auto_approve": False})
+        with mock.patch.object(sys, "stdin", None):
+            self.assertEqual(self.cli("auto-approve", "--on"), 1)
+        self.assertIn("isn't a console", self.err)
+        self.assertFalse(config.load().auto_approve)
+
+    def test_it_approves_the_engines_own_figures(self):
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 30})
+        self.assertIn("Approved 1 day(s)", self.out)
+        self.assertIn("Odin posts these on its next run", self.out)
+
+    def test_a_day_that_is_still_settling_waits(self):
+        """A late commit, or a key added tomorrow, must be in before the day is decided."""
+        config.update({"auto_approve_min_age_days": 30})
+        self.assertEqual(self.cli("plan"), 0, self.err)
+        self.assertIn("auto-approve waits 30", self.out)
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        self.assertEqual(self.approved(), {})
+        self.assertEqual(config.DEFAULTS["auto_approve_min_age_days"], 2)
+        for bad in (-1, 31):
+            with self.subTest(bad=bad):
+                with self.assertRaises(config.SettingsError):
+                    config.validate({"auto_approve_min_age_days": bad})
+
+    def test_it_never_takes_an_ai_figure(self):
+        """An AI may only suggest, and a suggestion that differs is the signal a person should look."""
+        from baldur import assist, desk
+        day = desk.load_day(self.con, config.load(), DAY)
+        suggestion = types.SimpleNamespace(changed=lambda: [1], moves=lambda: "PROJ-42 1h30m -> 45m")
+        with mock.patch.object(desk, "load_day", side_effect=lambda *a, **k: types.SimpleNamespace(
+                day=day.day, report=day.report, tickets=day.tickets, untracked=day.untracked,
+                flags=day.flags, ai=suggestion)):
+            self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        self.assertEqual(self.approved(), {})
+        self.assertIn("AI-assisted figures differ", self.out)
+        self.assertIn("approve it yourself", self.out)
+        self.assertTrue(assist, "assist is the module whose figures must never be taken here")
+
+    def test_a_flagged_day_is_left_for_the_person(self):
+        from baldur import auto, desk
+        day = desk.load_day(self.con, config.load(), DAY)
+        for flag in auto.HOLD_FLAGS:
+            with self.subTest(flag=flag):
+                marked = types.SimpleNamespace(day=day.day, report=day.report, tickets=day.tickets,
+                                               untracked=day.untracked, flags=[flag + " (detail)"], ai=None)
+                with mock.patch.object(desk, "load_day", side_effect=lambda *a, _m=marked, **k: _m):
+                    found = auto.candidates(self.con, config.load())
+                self.assertTrue(found and not found[0].ok, flag)
+                self.assertIn(flag, found[0].hold)
+
+    def test_every_warning_the_estimator_can_raise_is_one_auto_approve_holds_on(self):
+        """Review F2 was a flag auto-approve didn't know, and it doubled the figure: with no meetings
+        known there is no ambient discount, and Odin logs that meeting time separately too. So this
+        reads the flag texts out of the estimator and asserts HOLD_FLAGS covers every one, which
+        fails if someone adds a flag without deciding whether a person should see it."""
+        import re
+        from baldur import auto
+        source = (ROOT / "apps" / "baldur" / "baldur" / "estimate.py").read_text(encoding="utf-8")
+        texts = re.findall(r"""flags\.append\(\s*f?["']([^"'{]{10,})""", source)
+        self.assertGreaterEqual(len(texts), 6, "the flag texts should have been found")
+        for text in texts:
+            with self.subTest(flag=text):
+                self.assertTrue(any(text.startswith(h) for h in auto.HOLD_FLAGS),
+                                f"{text!r} is a flag no HOLD_FLAGS entry matches: decide whether a person "
+                                "must see it before auto-approve may decide that day")
+
+    def test_a_day_with_no_calendar_data_is_left_for_the_person(self):
+        from baldur import auto, desk
+        day = desk.load_day(self.con, config.load(), DAY)
+        marked = types.SimpleNamespace(day=day.day, report=day.report, tickets=day.tickets,
+                                       untracked=day.untracked, ai=None,
+                                       flags=["No calendar data for this day, so meetings aren't taken into account"])
+        with mock.patch.object(desk, "load_day", side_effect=lambda *a, **k: marked):
+            found = auto.candidates(self.con, config.load())
+        self.assertTrue(found and not found[0].ok)
+        self.assertIn("No calendar data", found[0].hold)
+
+    def test_a_day_you_rejected_before_is_left_for_the_person(self):
+        """Review F5: reject a day, let one more commit land, and it would have been approved."""
+        from baldur import auto
+        self.assertEqual(self.cli("reject", "--date", DAY.isoformat()), 0, self.err)
+        self.commit(t(1, 17, 0), "PROJ-42")           # a later commit makes a new proposal
+        self.run_store()
+        self.assertTrue(auto.waiting_days(self.con), "the day is waiting again")
+        found = auto.run(self.con, config.load())
+        self.assertEqual([c.day for c in found if c.approved], [])
+        self.assertIn("you rejected this day before", found[0].hold)
+
+    def test_a_ticket_jira_cannot_take_is_left_for_the_person(self):
+        """Review F6: the window refuses a ticket with a problem, so auto-approve must too."""
+        from baldur import auto, desk
+        day = desk.load_day(self.con, config.load(), DAY)
+        rows = [desk.TicketRow(key=t0.key, estimate=t0.estimate, open_id=t0.open_id, approved_id=t0.approved_id,
+                               approved=t0.approved, held=t0.held, review=t0.review,
+                               problem="PROJ-42 not found in Jira" if i == 0 else None)
+                for i, t0 in enumerate(day.tickets)]
+        marked = types.SimpleNamespace(day=day.day, report=day.report, tickets=rows, untracked=day.untracked,
+                                       flags=[], ai=None)
+        with mock.patch.object(desk, "load_day", side_effect=lambda *a, **k: marked):
+            found = auto.candidates(self.con, config.load())
+        self.assertTrue(found and not found[0].ok)
+        self.assertIn("not found in Jira", found[0].hold)
+
+    def test_a_day_longer_than_your_tour_of_duty_is_left_for_the_person(self):
+        config.update({"tour_of_duty": {"start": "09:00", "end": "10:00", "unpaid_minutes": 0}})
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        self.assertEqual(self.approved(), {})
+        self.assertIn("outside your tour of duty", self.out)
+
+    def test_only_so_many_days_in_one_run(self):
+        """Switching it on with a year of history behind you must not approve hundreds of days at once."""
+        from baldur import auto
+        # A second day with its own commits, so two days are genuinely waiting.
+        later = DAY + dt.timedelta(days=1)
+        self.commit(t(2, 9, 0), "PROJ-42")
+        self.commit(t(2, 10, 0), "PROJ-42")
+        self.run_store(DAY, later)
+        self.assertEqual(len(auto.waiting_days(self.con)), 2, "two days should be waiting")
+        config.update({"auto_approve_max_days_per_run": 1})
+        found = auto.run(self.con, config.load(), today=later + dt.timedelta(days=30))
+        self.assertEqual([c.day for c in found if c.approved], [DAY], "oldest first, one at a time")
+        self.assertIn("more than 1 days qualified", found[1].hold)
+        self.assertEqual(config.DEFAULTS["auto_approve_max_days_per_run"], 5)
+
+    def test_it_raises_nothing_and_leaves_untracked_time_alone(self):
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        rows = self.con.execute("SELECT minutes_proposed, minutes_final FROM day_proposals "
+                                "WHERE status = 'approved'").fetchall()
+        for proposed, final in rows:
+            self.assertLessEqual(final, proposed, "auto-approve may never raise a figure")
+        untracked = self.con.execute("SELECT count(*) FROM day_proposals WHERE work_item_key IS NULL "
+                                     "AND status = 'approved'").fetchone()[0]
+        self.assertEqual(untracked, 0)
+
+    def test_a_second_run_approves_nothing_again(self):
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        before = self.approved()
+        self.assertEqual(self.cli("apply", "--yes"), 0, self.err)
+        self.assertEqual(self.approved(), before, "a decided day is final; nothing is approved twice")
+
+    def test_refresh_approves_only_with_both_the_flag_and_the_setting(self):
+        self.assertEqual(self.cli("refresh"), 0, self.err)
+        self.assertEqual(self.approved(), {}, "a plain refresh never decides")
+        config.update({"auto_approve": False})
+        self.assertEqual(self.cli("refresh", "--auto-approve"), 0, self.err)
+        self.assertEqual(self.approved(), {}, "the flag alone does nothing")
+        self.assertNotIn("Baldur:", self.err, "the ordinary case is not a problem to report")
+        config.update({"auto_approve": True})
+        self.assertEqual(self.cli("refresh", "--auto-approve"), 0, self.err)
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 30})
+
+
+class RefreshTests(CollectBase, CliCase):
+    """refresh is what the scheduled task runs: read git, estimate, check GitHub. It decides nothing."""
+
+    def test_it_reads_git_estimates_and_leaves_the_days_waiting(self):
+        self.worked_repo()
+        self.setup_baldur(repo_roots=[str(self.dir / "src")])
+        self.assertEqual(self.cli("refresh"), 0, self.err)
+        self.assertIn("Read 1 repository, 8 new commits.", self.out)
+        self.assertIn("proposal", self.out)
+        self.assertIn("waiting for you: asgard baldur days", self.out)
+        self.assertEqual(self.con.execute("SELECT count(*) FROM commits WHERE is_mine = 1").fetchone()[0], 8)
+        waiting = self.con.execute("SELECT count(*) FROM day_proposals WHERE status = 'proposed' "
+                                   "AND work_item_key IS NOT NULL").fetchone()[0]
+        self.assertTrue(waiting, "refresh should leave proposals to review")
+        self.assertIn("refresh: 1 repositories", (paths.log_dir() / "baldur.log").read_text())
+
+    def test_it_approves_nothing_ever(self):
+        """The whole point of a scheduled refresh: no decision is made without the person."""
+        self.worked_repo()
+        self.setup_baldur(repo_roots=[str(self.dir / "src")])
+        self.assertEqual(self.cli("refresh"), 0, self.err)
+        decided = self.con.execute("SELECT count(*) FROM day_proposals WHERE status IN "
+                                   "('approved', 'rejected')").fetchone()[0]
+        self.assertEqual(decided, 0)
+        self.assertEqual(self.con.execute("SELECT count(*) FROM worklogs").fetchone()[0], 0)
+
+    def test_quiet_prints_only_problems(self):
+        self.worked_repo()
+        self.setup_baldur(repo_roots=[str(self.dir / "src")])
+        self.assertEqual(self.cli("refresh", "--quiet"), 0, self.err)
+        self.assertEqual(self.out, "")
+        self.assertEqual(self.err, "")
+
+    def test_a_repository_that_fails_is_reported_and_the_estimate_still_runs(self):
+        self.worked_repo()
+        broken = self.dir / "src" / "broken"
+        broken.mkdir()
+        (broken / ".git").write_text("gitdir: " + str(self.dir / "missing") + "\n")
+        self.setup_baldur(repo_roots=[str(self.dir / "src")])
+        self.assertEqual(self.cli("refresh"), 1)
+        self.assertIn("broken wasn't collected", self.err)
+        self.assertTrue(self.con.execute("SELECT count(*) FROM day_proposals").fetchone()[0],
+                        "one bad repository must not stop the estimate")
+
+    def test_github_being_unreachable_is_a_problem_not_a_failed_estimate(self):
+        self.worked_repo()
+        self.setup_baldur(repo_roots=[str(self.dir / "src")], github_api="github.agency.gov")
+        with mock.patch.object(github, "load_token", return_value="t"), \
+                mock.patch.object(github, "sync", side_effect=github.GitHubError("Couldn't reach github.agency.gov")):
+            self.assertEqual(self.cli("refresh"), 1)
+        self.assertIn("GitHub wasn't checked: Couldn't reach github.agency.gov", self.err)
+        self.assertTrue(self.con.execute("SELECT count(*) FROM day_proposals").fetchone()[0],
+                        "GitHub must never be why the estimates didn't happen")
+
+    def test_github_on_with_no_token_says_how_to_save_one(self):
+        self.worked_repo()
+        self.setup_baldur(repo_roots=[str(self.dir / "src")], github_api="github.agency.gov")
+        with mock.patch.object(github, "load_token", return_value=None):
+            self.assertEqual(self.cli("refresh"), 1)
+        self.assertIn("github token", self.err)
+
+    def test_it_checks_github_when_a_token_is_saved(self):
+        self.worked_repo()
+        server = f.FakeGitHub()
+        self.addCleanup(server.close)
+        self.setup_baldur(repo_roots=[str(self.dir / "src")], github_api="github.agency.gov")
+        real = github.Client
+        with mock.patch.object(github, "load_token", return_value=f.TOKEN), \
+                mock.patch.object(github, "Client", side_effect=lambda api, token: real(server.api, token)):
+            self.assertEqual(self.cli("refresh"), 0, self.err)
+        self.assertIn("Checked GitHub:", self.out)
+
+    def test_days_narrows_what_is_re_estimated(self):
+        self.worked_repo()
+        self.setup_baldur(repo_roots=[str(self.dir / "src")])
+        self.assertEqual(self.cli("refresh", "--days", "3"), 0, self.err)
+        first = (dt.date.today() - dt.timedelta(days=2)).isoformat()
+        self.assertIn(f"Estimated {first} to {dt.date.today().isoformat()}", self.out)
 
 
 class ReposTests(CliCase):
@@ -639,12 +995,29 @@ class ScheduleTests(CliCase):
         cmd = cli.schedule_command("TUE", "08:30", python=str(python))
         self.assertEqual(cmd[:11], ["schtasks", "/Create", "/F", "/SC", "WEEKLY", "/D", "TUE", "/ST", "08:30", "/IT",
                                     "/TN"])
-        self.assertEqual(cmd[11], "Asgard Baldur collect")
-        self.assertEqual(cmd[-1], f'"{self.dir / "pythonw.exe"}" "{cli.ASGARD_COMMAND}" baldur collect --quiet')
+        self.assertEqual(cmd[11], "Asgard Baldur refresh")
+        self.assertEqual(cmd[-1],
+                         f'"{self.dir / "pythonw.exe"}" "{cli.ASGARD_COMMAND}" baldur refresh --quiet --auto-approve')
         self.assertEqual(cli.schedule_command("MON", "09:00", remove=True),
-                         ["schtasks", "/Delete", "/F", "/TN", "Asgard Baldur collect"])
+                         ["schtasks", "/Delete", "/F", "/TN", "Asgard Baldur refresh"])
         with self.assertRaisesRegex(cli.CliError, "261 characters"):
             cli.schedule_command("MON", "09:00", python="C:\\" + "x" * 300 + "\\python.exe")
+
+    def test_a_daily_task_has_no_day(self):
+        """schtasks reads /D on a DAILY task as "every N days", so a weekday there would be wrong."""
+        cmd = cli.schedule_command("TUE", "08:30", python="/p", cadence="DAILY")
+        self.assertEqual(cmd[:7], ["schtasks", "/Create", "/F", "/SC", "DAILY", "/ST", "08:30"])
+        self.assertNotIn("/D", cmd)
+
+    def test_the_scheduled_task_only_ever_runs_refresh(self):
+        """A scheduled run reads git, estimates and checks GitHub. It carries --auto-approve so that
+        switching the setting on or off needs no new task, and that flag does nothing on its own."""
+        action = cli.schedule_command("MON", "09:00", python="/p")[-1]
+        self.assertIn(" baldur refresh ", action)
+        for decision in ("reject", "change", "actual", "--ai", " approve"):
+            self.assertNotIn(decision, action)
+        self.assertIn("--auto-approve", action)
+        self.assertFalse(config.DEFAULTS["auto_approve"], "which does nothing until the person opts in")
 
     def schedule(self, *args, returncode=0, stderr=""):
         done = subprocess.CompletedProcess([], returncode, "", stderr)
@@ -656,27 +1029,43 @@ class ScheduleTests(CliCase):
     def test_it_asks_task_scheduler_and_says_when(self):
         code, run = self.schedule("--day", "wednesday", "--time", "07:45")
         self.assertEqual(code, 0, self.err)
-        self.assertIn("Baldur will collect every WED at 07:45", self.out)
+        self.assertIn("every WED at 07:45", self.out)
+        self.assertIn("decides nothing", self.out)
         self.assertEqual(run.call_args[0][0][6:9], ["WED", "/ST", "07:45"])
         code, run = self.schedule("--remove")
-        self.assertIn("Removed the weekly collection.", self.out)
+        self.assertIn("Removed the scheduled refresh.", self.out)
         self.assertEqual(run.call_args[0][0][:2], ["schtasks", "/Delete"])
+
+    def test_a_daily_cadence_says_every_day(self):
+        code, run = self.schedule("--cadence", "daily", "--time", "18:00")
+        self.assertEqual(code, 0, self.err)
+        self.assertIn("every day at 18:00", self.out)
+        self.assertEqual(run.call_args[0][0][4], "DAILY")
+
+    def test_the_old_collect_only_task_is_removed_either_way(self):
+        """Two tasks both refreshing would do the work twice; the old name goes when the new one lands."""
+        for args in (("--cadence", "daily"), ("--remove",)):
+            _, run = self.schedule(*args)
+            deleted = [c[0][0] for c in run.call_args_list if c[0][0][:2] == ["schtasks", "/Delete"]]
+            self.assertIn(["schtasks", "/Delete", "/F", "/TN", "Asgard Baldur collect"], deleted, args)
 
     def test_a_refusal_and_bad_input_are_messages(self):
         code, _ = self.schedule(returncode=1, stderr="ERROR: Access is denied.")
         self.assertEqual(code, 1)
         self.assertIn("Task Scheduler refused: ERROR: Access is denied.", self.err)
-        self.assertIn("run asgard baldur collect at least weekly yourself", self.err)
-        for args, why in ((("--day", "FUNDAY"), "--day is one of"), (("--time", "25:00"), "--time is like 09:00")):
+        self.assertIn("run asgard baldur refresh at least weekly", self.err)
+        for args, why in ((("--day", "FUNDAY"), "--day is one of"), (("--time", "25:00"), "--time is like 09:00"),
+                          (("--cadence", "hourly"), "--cadence is one of")):
             code, run = self.schedule(*args)
             self.assertEqual(code, 1, args)
             self.assertIn(why, self.err)
             run.assert_not_called()
 
     @unittest.skipIf(os.name == "nt", "Task Scheduler is there")
-    def test_off_windows_it_says_to_collect_by_hand(self):
+    def test_off_windows_it_says_to_refresh_by_hand(self):
         self.assertEqual(self.cli("schedule"), 1)
-        self.assertIn("uses Windows Task Scheduler", self.err)
+        self.assertIn("Windows Task Scheduler", self.err)
+        self.assertIn("asgard baldur refresh", self.err)
 
 
 class MainTests(CliCase):

@@ -616,7 +616,12 @@ class AgentGuardTests(unittest.TestCase):
                         "git commit -m x && baldur.cmd approve --date today",
                         r"sqlite3 %LOCALAPPDATA%\Asgard\muninn.db \"UPDATE day_proposals SET status='approved'\"",
                         "python -c \"import sqlite3; sqlite3.connect('muninn.db').execute('DELETE FROM events')\"",
-                        "py -3 Asgard.pyw --muninn restore"):
+                        "py -3 Asgard.pyw --muninn restore",
+                        # Auto-approve decides days without a person, so an agent may not reach it.
+                        f"{b} auto-approve", f"{b} auto-approve --dry-run", f"{b} auto-approve --on --yes",
+                        f"{b} refresh --auto-approve", f"{b} refresh --quiet --auto-approve",
+                        "asgard baldur auto-approve", "asgard baldur refresh --auto-approve",
+                        "baldur.cmd refresh --auto-approve"):
             with self.subTest(command):
                 self.assertIsNotNone(self.guard.verdict(command))
 
@@ -626,6 +631,8 @@ class AgentGuardTests(unittest.TestCase):
                         f"{b} ai list --json", f"{b} ai show 2026-10-01 --json", f"{b} ai guide", f"{b} report today",
                         f"{b} days", f"{b} estimate", f"{b} collect", f"{b} keys 9f3c1a2b", f"{b} setup",
                         f"{b} calibrate", f"{b} actuals", f"{b} ai withdraw r3", "git commit -m 'approve the docs'",
+                        # A plain refresh is collection and an estimate, which an agent may run.
+                        f"{b} refresh", f"{b} refresh --quiet", "asgard baldur refresh", f"{b} refresh --days 3",
                         "python tools/run_tests.py", "echo approve"):
             with self.subTest(command):
                 self.assertIsNone(self.guard.verdict(command))

@@ -30,6 +30,10 @@ field is {"key", "label", "help", "kind"} plus what its kind needs:
     choice    "options": [{"value", "label"}]
     list      a list of strings, one per line in the window
     time      24-hour "HH:MM"
+    secret    a password or token. Write-only: settings_values returns "saved" or "", never the
+              secret, so it is never in the window's memory or a screenshot. set_settings gets the
+              new secret as text, "" to leave the saved one alone, or None for "forget it". The app
+              puts it somewhere made for secrets (asgard.secrets), never in its settings file.
 
 Rules the shell relies on:
 - The keys are dotted paths into the app's own settings file, and the app decides what is editable.

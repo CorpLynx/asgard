@@ -37,6 +37,8 @@ Nothing is sent anywhere else: no telemetry, no update check unless an update so
 ## Secrets
 
 - Tokens live in Windows Credential Manager (Asgard) or Odin's DPAPI file, protected by the user's Windows credentials. They are never written to Muninn, settings or logs.
+- **`asgard.secrets`** is the shared way in to Credential Manager (`get`, `put`, `delete`, `where`), used by Heimdall's ServiceNow password. The account name is not a secret and may sit in an app's settings file; the password only ever lives in the store. Off Windows there is no store, so `ASGARD_SECRET_<SERVICE>_<ACCOUNT>` is read instead, which is also how tests avoid touching the real one. Baldur's GitHub token and Odin's Jira token predate this module and keep their own code.
+- **A secret never reaches the window.** A `secret` field in Settings is write-only: the backend answers "saved" or "", never the value, so a password isn't in the window's memory or in a screenshot. Typing one saves it; **Forget** removes it.
 - **Belt and braces at the database boundary.** `asgard.muninn.redact` masks anything shaped like a credential before it is stored: passwords and tokens in URLs, `Authorization` headers, bearer tokens, `token=`/`password=` pairs, GitHub and AWS key formats, JWTs and private keys. It is applied to source URLs, git remote URLs, error text, sync problems and every event payload. It recognises secrets by shape, so an opaque secret typed into free text isn't caught; it is a net, not the control.
 - TLS verification is never disabled anywhere (a guardrail test in Odin; the consolidation spec adds one for Asgard).
 

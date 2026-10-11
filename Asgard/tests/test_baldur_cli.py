@@ -171,17 +171,20 @@ class AutoApproveTests(CliCase):
         self.assertEqual(self.approved(), {})
 
     def test_apply_shows_the_plan_then_needs_YES(self):
-        for typed, expect in (("", {}), ("no", {}), ("yes", {}), ("YES", {"PROJ-42": 90, "PROJ-51": 30})):
+        # Anything but YES leaves the day alone, so these all run against the one fixture; YES is
+        # last, because a decision is final. (Calling setUp() again here would leave a Muninn
+        # connection open per round, which Windows then can't delete: see HANDOFF, 2026-10-11.)
+        for typed in ("", "no", "yes", "Y"):
             with self.subTest(typed=typed):
-                self.setUp()                   # a fresh day each time: a decision is final
                 self.assertEqual(self.cli("apply", stdin=self.console(typed + "\n")), 0, self.err)
                 self.assertIn("Would approve 1 day(s)", self.out)
                 self.assertIn("posts this time to Jira", self.out)
-                self.assertEqual(self.approved(), expect)
+                self.assertIn("Nothing was approved.", self.out)
+                self.assertEqual(self.approved(), {})
                 if typed == "yes":
                     self.assertIn("has to be YES, in capitals", self.out)
-                if not expect:
-                    self.assertIn("Nothing was approved.", self.out)
+        self.assertEqual(self.cli("apply", stdin=self.console("YES\n")), 0, self.err)
+        self.assertEqual(self.approved(), {"PROJ-42": 90, "PROJ-51": 30})
 
     def test_apply_needs_no_setting_because_typing_YES_is_the_approval(self):
         config.update({"auto_approve": False})

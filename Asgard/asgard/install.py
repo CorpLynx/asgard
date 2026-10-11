@@ -29,7 +29,7 @@ SOURCE_ROOT = Path(__file__).resolve().parent.parent
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 
-from asgard import __version__, catalog, paths, winutil  # noqa: E402
+from asgard import __version__, catalog, paths, shim, winutil  # noqa: E402
 
 PAYLOAD = ("Asgard.pyw", "VERSION", "README.md", "asgard", "apps")
 MIN_PYTHON = (3, 9)
@@ -187,8 +187,9 @@ def install(desktop: bool = False) -> Dict[str, Any]:
             say("ok", "Listed in Settings > Apps")
         except OSError as exc:
             say("!", f"Couldn't add Asgard to Settings > Apps ({exc}). The Valhalla tile still uninstalls it.")
+        items.extend(install_command(app, python))
     else:
-        say("--", "Not Windows: skipped shortcuts and the Settings > Apps entry")
+        say("--", "Not Windows: skipped shortcuts, the Settings > Apps entry and the asgard command")
 
     known = {(i.get("kind"), i.get("path")) for i in items}
     merged = items + [i for i in ledger.get("items", []) if (i.get("kind"), i.get("path")) not in known]
@@ -203,6 +204,27 @@ def install(desktop: bool = False) -> Dict[str, Any]:
     os.replace(tmp, paths.ledger_path())
     say("ok", "Saved the install record that Valhalla uses to uninstall")
     return {"entry": entry, "pythonw": pythonw, "data": data, "shortcut": shortcut_made}
+
+
+def install_command(app: Path, python: str, reg: Any = None) -> List[Dict[str, str]]:
+    """bin\\asgard.cmd and its per-user Path entry; the ledger items Valhalla undoes (asgard/shim.py)."""
+    folder = paths.bin_dir()
+    program, script = shim.shim_command(app, paths.FROZEN, python)
+    try:
+        target = shim.write_shim(folder, program, script)
+    except (OSError, ValueError) as exc:
+        say("!", f"Couldn't write the asgard command ({exc}). Each app's own .cmd still works.")
+        return []
+    items = [{"kind": "dir", "path": str(folder)}]
+    try:
+        added = shim.add_to_user_path(folder, reg)
+        items.append({"kind": "path", "path": str(folder)})
+        say("ok", "The asgard command, on your Path" + ("" if added else " (already there)") +
+            ": open a new terminal and try  asgard --help")
+    except shim.PathError as exc:
+        say("!", f"{exc} The asgard command is at {target}; add {folder} to your Path yourself "
+                 "(Settings > System > About > Advanced system settings > Environment Variables, User variables).")
+    return items
 
 
 def launch(entry: Path, pythonw: str, data: Path) -> None:

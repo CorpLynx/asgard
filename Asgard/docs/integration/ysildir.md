@@ -36,9 +36,9 @@ The official MCP Python SDK (`mcp` 2.3.0, `MCPServer`), running only its stdio t
   Without the SDK, or on a Python older than 3.10, `ysildir.cmd` says what's missing and what
   still works, and exits 2.
 - **The packaged build** ([packaging.md](../packaging.md)) includes Python 3.12, `mcp` and
-  `pydantic`, so it needs nothing installed. `ysildir.cmd setup` there writes
-  `asgard-cli.exe apps\ysildir\cli.py serve` as the client's command (`clients.launch`), and the
-  build's checks drive Ysildir over stdio from it.
+  `pydantic`, so it needs nothing installed. `asgard ysildir setup` there writes
+  `asgard-cli.exe ysildir serve` as the client's command (`clients.launch`), and the build's checks
+  drive Ysildir over stdio from it.
 
 ## Commands
 
@@ -57,8 +57,10 @@ The official MCP Python SDK (`mcp` 2.3.0, `MCPServer`), running only its stdio t
 `setup --print` shows the commands and snippets without changing anything; `--force` replaces an
 entry that's already there. Setup keeps every other server in a file, refuses a file it can't
 parse (VS Code's may have comments) and prints the snippet to paste instead. The client starts the
-Python that ran setup, with `cli.py serve` (in the packaged build, its `asgard-cli.exe`); run setup
-again after changing Python or moving the build.
+Python that ran setup with `asgard\cli.py ysildir serve` (in the packaged build, `asgard-cli.exe
+ysildir serve`), by its full path: never `asgard.cmd`, which a Node-based client can't start without a
+shell, and which could stop stdio on Ctrl+C. Entries written before (`apps\ysildir\cli.py serve`) keep
+working. Run setup again after changing Python or moving the build.
 
 Kiro's `autoApprove` lists only the read-only tools that are on. Adding `baldur_record_estimate`
 to it saves a click after every commit, and a report never changes a figure on its own; that's
@@ -169,7 +171,7 @@ instructions' filtering, the figures' id in `take`, a ticket's `worklog_line`) f
 - Which MCP features the on-premises Kiro supports (instructions, resources, prompts), and the
   keys in its `mcp.json`.
 - The org's Copilot MCP policy and VS Code's `ChatMCP` policy.
-- Whether App Control lets the client start Python with `cli.py serve` from
+- Whether App Control lets the client start Python with `asgard\cli.py ysildir serve` from
   `%LOCALAPPDATA%\Asgard\app\`.
 - Whether IT approves the SDK's compiled wheels, and which `mcp` version the agency mirror has.
 - How a real agent behaves in the acceptance walkthrough (the spec's task 10).

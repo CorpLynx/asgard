@@ -9,6 +9,8 @@ collection or an estimate; it may not:
 - change Baldur's settings, a commit's keys, which repositories count, the schedule or the
   GitHub token;
 - touch Muninn's file directly (muninn.db), run Asgard's database maintenance, or uninstall Asgard;
+- do any of these through the asgard command (asgard baldur approve, asgard muninn restore,
+  asgard uninstall, asgard ysildir tools --on), however it's started;
 - switch Ysildir's tools on or off, connect AI clients to it (ysildir.cmd tools --on/--off, setup),
   or touch its switches file (ysildir.json): which tools an agent may use is the person's choice,
   approved by their ISSO.
@@ -22,13 +24,19 @@ import json
 import re
 import shlex
 import sys
-from typing import Any, Iterator, List, Optional, Set
+from typing import Any, Iterator, List, Optional, Set, Tuple
 
 COMMAND_KEYS = {"command", "cmd", "script", "commandLine", "command_line"}
 # Baldur and Ysildir are started as baldur.cmd (or baldur on PATH), or as their cli.py from the
 # install or the repo. A cli.py with no other app's folder in its path is taken as Baldur's: an agent
 # can cd into Baldur's folder and run .\cli.py.
 OTHER_APPS = ("heimdall", "ysildir", "odin", "bifrost", "freya", "loki")
+# The asgard command runs every app and Asgard's own commands: asgard baldur approve, asgard.cmd (the
+# Path shim), asgard-cli.exe and Asgard.exe (the packaged build), asgard\cli.py with python, and
+# python -m asgard.cli. Its first word that isn't an option names what runs.
+DISPATCHER_NAMES = {"asgard", "asgard.cmd", "asgard.bat", "asgard.exe", "asgard-cli", "asgard-cli.exe"}
+DISPATCH_WORDS = {"baldur", "heimdall", "odin", "ysildir", "muninn", "install", "uninstall", "version",
+                  "selftest", "ui"}
 MUNINN_FILE = re.compile(r"muninn\.db", re.I)
 ASGARD_DB = re.compile(r"asgard[\\/][^\s\"']*\.db\b", re.I)          # any database file in Asgard's folder
 SETTINGS_FILE = re.compile(r"baldur\.json", re.I)
@@ -121,19 +129,60 @@ def _program(word: str, app: str) -> bool:
     if name != "cli.py":
         return False
     folders = path.lower().split("/")[:-1]
+    if folders[-1:] == ["asgard"]:                 # asgard\cli.py is the asgard command, not an app's
+        return False
     if app == "baldur":
         return "baldur" in folders or not any(other in folders for other in OTHER_APPS)
     return app in folders
 
 
+def _first_word(args: List[str]) -> Optional[int]:
+    """Where the first argument that isn't an option is."""
+    return next((i for i, a in enumerate(args) if not a.startswith("-")), None)
+
+
+def _dispatcher(words: List[str], n: int) -> bool:
+    """Whether words[n] starts the asgard command (asgard, asgard.cmd, asgard-cli.exe, asgard\\cli.py, -m asgard.cli)."""
+    path = _unquote(words[n]).replace("\\", "/")
+    name = path.rsplit("/", 1)[-1].lower()
+    if name in DISPATCHER_NAMES:
+        return True
+    if name == "cli.py":
+        folders = [f for f in path.lower().split("/")[:-1] if f not in ("", ".")]
+        if folders[-1:] == ["asgard"]:
+            return True
+        if not folders:                            # a bare .\cli.py: the asgard command if its next word is one
+            rest = _expanded(words[n + 1:])
+            first = _first_word(rest)
+            return first is not None and rest[first].lower() in DISPATCH_WORDS
+        return False
+    return name in ("asgard.cli", "asgard") and n > 0 and _unquote(words[n - 1]).lower() == "-m"
+
+
+def dispatched(command: str) -> List[Tuple[str, List[str]]]:
+    """(what it runs, its arguments) for each use of the asgard command in a shell command line."""
+    out = []
+    for words in _segments(command):
+        for n in range(len(words)):
+            if _dispatcher(words, n):
+                rest = _expanded(words[n + 1:])
+                first = _first_word(rest)
+                if first is not None:
+                    out.append((rest[first].lower(), rest[first + 1:]))
+                break
+    return out
+
+
 def app_args(command: str, app: str = "baldur") -> List[List[str]]:
-    """The arguments of each invocation of an Asgard app's command line (baldur, ysildir) in a shell command."""
+    """The arguments of each invocation of an Asgard app's command line (baldur, ysildir) in a shell command:
+    its own program or cli.py, or the asgard command (asgard baldur ...)."""
     out = []
     for words in _segments(command):
         for n, word in enumerate(words):
-            if _program(word, app):
+            if _program(word, app) and not _dispatcher(words, n):
                 out.append(_expanded(words[n + 1:]))
                 break
+    out.extend(rest for name, rest in dispatched(command) if name == app)
     return out
 
 
@@ -165,6 +214,12 @@ def _not_text(words: List[str]) -> List[str]:
 
 
 def _app_verdict(command: str) -> Optional[str]:
+    for name, args in dispatched(command):
+        first = _first_word(args)
+        if name == "muninn" and first is not None and args[first].lower() in MUNINN_MAINTENANCE:
+            return MESSAGE.format(what="Muninn maintenance (restore, repair, retention)")
+        if name == "uninstall":
+            return MESSAGE.format(what="Uninstalling Asgard")
     for args in app_args(command, "ysildir"):
         words = [a.lower() for a in args if not a.startswith("-")]
         flags = {a.split("=", 1)[0].lower() for a in args if a.startswith("-")}

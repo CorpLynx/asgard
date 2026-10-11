@@ -647,6 +647,42 @@ class AgentGuardTests(unittest.TestCase):
             with self.subTest(command):
                 self.assertIsNone(self.guard.verdict(command))
 
+    def test_the_asgard_command_is_read_the_same_way(self):
+        """asgard <app> <command> (issue #10): bare, the Path shim, the packaged build's programs, asgard\\cli.py
+        with python, -m asgard.cli, and inside other commands."""
+        shim = r'"C:\Users\Dev User\AppData\Local\Asgard\bin\asgard.cmd"'
+        app = r"C:\Users\Dev User\AppData\Local\Asgard\app"
+        for command in ("asgard baldur approve --date 2026-10-01", "asgard.cmd baldur reject 12",
+                        f"{shim} baldur change 12 2h", rf'"{app}\asgard-cli.exe" baldur actual 2026-10-01 6h',
+                        rf'"{app}\Asgard.exe" baldur calibrate --accept', "asgard baldur approve --date today --ai 3f2a",
+                        rf'py -3 "{app}\asgard\cli.py" baldur approve --date today',
+                        "python -m asgard.cli baldur approve --date today",
+                        rf'cd "{app}\asgard"; py -3 .\cli.py baldur approve --date today',
+                        'cmd /c "asgard baldur approve --date 2026-10-01"',
+                        'powershell -NoProfile -Command "asgard baldur setup --email x@agency.gov"',
+                        "Start-Process asgard -ArgumentList 'baldur','approve','--date','2026-10-01'",
+                        'Start-Process -FilePath asgard.cmd -ArgumentList "baldur reject --date 2026-10-01" -Wait',
+                        'bash -lc "asgard baldur repos --off vendor"', "asgard baldur keys 9f3c1a2b PROJ-9",
+                        "asgard baldur github token", "asgard baldur schedule --day MON",
+                        "git commit -m x && asgard baldur approve --date today",
+                        "asgard muninn restore --yes", "asgard muninn repair", "asgard-cli.exe muninn retention on",
+                        "asgard uninstall", "asgard uninstall --yes --purge", f"{shim} uninstall --yes",
+                        "asgard ysildir tools --on baldur_day", "asgard ysildir tools --off asgard_guide",
+                        "asgard ysildir setup --kiro .", rf'"{app}\asgard-cli.exe" ysildir setup --vscode-user'):
+            with self.subTest(command):
+                self.assertIsNotNone(self.guard.verdict(command))
+        for command in ("asgard baldur ai record --agent kiro --minutes 1h --commit abc1234 --confidence low "
+                        "--summary x", "asgard baldur report today", "asgard baldur ai list --json",
+                        "asgard baldur setup", "asgard baldur collect", "asgard muninn status", "asgard muninn check",
+                        "asgard version", "asgard --help", "asgard selftest", "asgard ysildir check",
+                        "asgard ysildir tools", "asgard odin status", "asgard heimdall fill --dry-run",
+                        'git commit -m "asgard baldur approve is the person\'s to run"'):
+            with self.subTest(command):
+                self.assertIsNone(self.guard.verdict(command))
+        event = {"tool": "shell", "tool_input": {"command": ["asgard", "baldur", "approve", "--date", "2026-10-01"]}}
+        self.assertTrue(any(self.guard.verdict(c) for c in self.guard.commands(event)), "an argv list")
+        self.assertEqual(run_hook("guard_baldur", "asgard baldur approve --date today").returncode, 2)
+
     def test_r6_commands_inside_quotes_bare_cli_py_and_files_are_blocked(self):
         """Review R6 (2026-10-09): each of these got past the guard, and one approved a day."""
         b = r'py -3 "C:\Users\me\AppData\Local\Asgard\app\apps\baldur\cli.py"'

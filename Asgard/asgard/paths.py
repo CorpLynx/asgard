@@ -51,6 +51,11 @@ def app_dir() -> Path:
     return data_dir() / "app"
 
 
+def bin_dir() -> Path:
+    """Where setup puts asgard.cmd, the one folder Asgard adds to your Path (asgard/shim.py)."""
+    return data_dir() / "bin"
+
+
 def log_dir() -> Path:
     return data_dir() / "logs"
 

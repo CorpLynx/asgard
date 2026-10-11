@@ -17,7 +17,7 @@ REQUIREMENTS = ROOT / "requirements.txt"
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._\-]*)(\[[A-Za-z0-9,._\-]+\])?==[A-Za-z0-9.+!_\-]+(\s*;.*)?$")
 # What the launcher needs to open its window, show an error, install and uninstall.
 STARTUP = ("__init__.py", "paths.py", "jsonfile.py", "launcher.py", "catalog.py", "install.py", "valhalla.py",
-           "runner.py", "winutil.py")
+           "runner.py", "winutil.py", "cli.py", "shim.py")
 # Import names that differ from the package name on PyPI.
 IMPORT_NAMES = {"pyyaml": "yaml", "pywin32": "win32api", "python_dateutil": "dateutil",
                 "pyside6_essentials": "PySide6"}
@@ -115,6 +115,20 @@ class DependencyTests(unittest.TestCase):
                         offenders.append(f"{path.relative_to(ROOT)}: {name}")
         self.assertGreater(len(files), 10)
         self.assertEqual(offenders, [], "Odin's daily run stays standard library (AGENTS.md); the window may not")
+
+    def test_the_asgard_command_imports_only_paths_until_a_command_is_chosen(self):
+        """asgard odin runs Odin's daily run, which may use only Muninn, paths and jsonfile; the
+        dispatcher (asgard/cli.py) adds nothing of Asgard's but paths before it hands over."""
+        tree = ast.parse((ROOT / "asgard" / "cli.py").read_text(encoding="utf-8"))
+        ours = set()
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module == "asgard":
+                ours |= {f"asgard.{a.name}" for a in node.names}
+            elif isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("asgard"):
+                ours.add(node.module)
+            elif isinstance(node, ast.Import):
+                ours |= {a.name for a in node.names if a.name.startswith("asgard")}
+        self.assertEqual(ours, {"asgard.paths"})
 
     def test_every_declared_package_is_used(self):
         used = {name for _, name in imports(runtime_files())}

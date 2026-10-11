@@ -175,6 +175,8 @@ ysildir.cmd tools                              each tool, on or off, and what it
 ysildir.cmd tools --on baldur_day              turn a tool on, then restart the MCP server in your client
 ```
 
+Ysildir's tile opens its page in Asgard's window: whether the SDK is installed, every tool with what it sends and a switch for it, the `setup` command for each client, and a button that runs `ysildir check`.
+
 Each tool's data flow needs your ISSO's approval, so each has a switch in `%LOCALAPPDATA%\Asgard\settings\ysildir.json`. Tools that send Muninn data (commit subjects, Jira summaries, times) start off. [docs/integration/ysildir.md](docs/integration/ysildir.md) lists every tool, what it sends and its command-line equivalent.
 
 ## Trying Odin with no Jira

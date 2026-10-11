@@ -84,6 +84,8 @@ It takes Odin's run lock, so it never races a run. `odin status` lists each post
 
 **Done when.** The backend has tests, the page loads offscreen in `tests/test_ui_qt.py`, and the catalog test expects the tile available.
 
+**As built (Oct 11).** `main` gained the page while this was in progress (`ui/Tools.qml`; it also switches tools, which the owner chose over read-only, and shows each client's `setup` command rather than a list of connected clients). This step added the tile's launcher, `ysildir.pyw`, and the tests above.
+
 ### 4b. The live specs catch up with their snapshots
 
 **Why.** `docs/baldur-spec.md` and `docs/muninn-design.md` are snapshots of live Claude artifacts. Their headers list edits made in the repo since Oct 4 that never reached the live pages, which are meant to be the source of truth.

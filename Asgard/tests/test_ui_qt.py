@@ -169,6 +169,30 @@ class WindowTests(unittest.TestCase):
         s = self.open(app="odin")
         self.visit_all(s)
 
+    def test_ysildir_window_loads_its_page_cleanly(self):
+        """The tile opens apps/ysildir/ysildir.pyw, which is this window (refinements 4a); its page works
+        with or without the MCP SDK."""
+        s = self.open(app="ysildir")
+        self.assertEqual(s.shell.title, "Ysildir")
+        self.visit_all(s)
+
+    def test_every_available_tile_with_a_python_window_opens_one_this_shell_can_show(self):
+        """A tile whose .pyw runs the shared window must name an app the registry knows."""
+        import re as _re
+        from asgard import catalog
+        from asgard.ui import registry
+        apps, _ = catalog.load_catalog(local=self.dir / "apps.local.json")
+        known = {a.id for a in registry.discover()[0]}
+        for app in apps:
+            target = (app.launch or {}).get("target", "")
+            script = ROOT / target.replace("{app}/", "") if target.endswith(".pyw") else None
+            if script is None or not script.is_file():
+                continue
+            found = _re.search(r'run\(app="([a-z]+)"\)', script.read_text(encoding="utf-8"))
+            if found:
+                with self.subTest(tile=app.id):
+                    self.assertIn(found.group(1), known)
+
     def test_heimdall_pages_load_cleanly_with_a_form_and_templates(self):
         self.write_form()
         from heimdall.ui_backend import Backend

@@ -1,162 +1,99 @@
-# Handoff: finish Baldur's Qt pages, then retire its tkinter window
+# Handoff: retire Baldur's tkinter window
 
-Written 2026-10-10 for whoever picks this up next (Claude Code). Read `Asgard/AGENTS.md` and
-`Asgard/HANDOFF.md` first; this file is the one task, not the project.
+Rewritten 2026-10-11. The first three quarters of this task are done; what is left is the deletion.
+Read `Asgard/AGENTS.md` and `Asgard/HANDOFF.md` first; this file is the one task, not the project.
 
 ## Where things stand
 
-Baldur has **two** windows right now:
+Baldur still has **two** windows, but they are no longer unequal:
 
 | | Where | What it can do |
 | --- | --- | --- |
 | tkinter (the old one) | `apps/baldur/baldur/window.py`, 612 lines, opened by `baldur.pyw` | everything below |
-| Qt pages (new, Oct 10) | `apps/baldur/ui/Week.qml`, `Day.qml` over `apps/baldur/baldur/ui_backend.py`, in Asgard's shared window | read, approve, reject, collect, estimate, copy |
+| Qt pages | `apps/baldur/ui/Week.qml`, `Day.qml` over `baldur/ui_backend.py`, in Asgard's shared window | everything below |
 
-Both can approve, and only the old one can change a figure. That is the problem to fix: **two
-windows that write decisions, with different abilities**, is worse than either alone.
+The abilities the Qt pages were missing on Oct 10 all landed in `c5ead53`, and Windows CI is green
+on `34759b3` (812 tests, `OK (skipped=14)`):
 
-The Qt pages are already the house style (they match `apps/odin/ui/*.qml` and
-`apps/heimdall/ui/*.qml`: `PageHeader` actions, a `MetricCard` grid, `Card` + `Repeater` rows with
-`Pill` statuses, `EmptyState`). Don't restyle them. Add the four missing abilities, then delete the
-tkinter window.
+- **Editing a figure.** `ui_backend` gained `parse_minutes`, `stage_figure`, `clear_figure`,
+  `staged` and `change_approved`. Staged figures live on the backend instance (`self._staged`, by
+  day then ticket), so they survive moving between pages; `_prune()` drops any whose ticket was
+  decided elsewhere, and `approve()` passes the rest to `desk.approve_day(..., figures=)`. Typing
+  the estimate again stages nothing. `change_approved` looks the approved row's id up itself, so it
+  never travels through QML, and supersedes through `desk.change_figure`. `Day.qml` draws an
+  editable `TextField` per row and confirms a change to an approved figure in an `AppDialog`
+  ("Odin posts the difference").
+- **GitHub freshness.** `ui_backend.sync_github(force=False)` returns a state rather than raising
+  (`off`, `no token`, `failed`, `fresh`), and `Week.qml` calls it through `callAsync` on a `Timer`
+  whose interval is `poll_minutes` and whose `running` is tied to `page.visible`, so nothing polls
+  behind a closed page. A failure shows beside the list, never as a toast.
+- **The small things.** A **This week** button, `Ctrl+Left` / `Ctrl+Right` as `Shortcut`s, and
+  Reject now asks first ("Nothing is posted for it.").
 
-## What's missing, in the order worth doing
+Covered by `tests/test_app_ui_backends.py`: 10 tests for figures (staging, clearing, surviving
+navigation, a bigger number being allowed, a ticket decided elsewhere, rejection dropping typed
+figures) and 6 for GitHub, including a pass against the fake server.
 
-### 1. Edit a figure (the real gap)
+## What is left: delete the tkinter window
 
-The tkinter window lets you select a ticket, type a length, and either stage it for the approval or
-change a figure you already approved. Nothing in the Qt pages does this, so a number you approve
-can't be corrected except from the CLI.
+Nothing blocks this on the code side. It wants one pass on Windows first (see below), because it
+removes the fallback.
 
-Three behaviours, all of them already in `desk.py`:
-
-- **Stage a figure before approving.** `window.py` keeps `self.figures: Dict[(date, key), int]`
-  (line 115), shows a staged value in place of the estimate (line 390), clears one with Delete
-  (`clear_figure`, line 451), and passes the day's staged figures to
-  `desk.approve_day(con, settings, day, figures)` (line 475). `approve_day` already takes
-  `figures: Optional[Dict[str, int]]`; `ui_backend.approve()` never passes it.
-- **Change an approved figure.** `desk.change_figure(con, approved_id, minutes) -> int` writes a new
-  approved row (it supersedes; triggers refuse an edit). It needs `TicketRow.approved_id`, and
-  `ui_backend.day()` does **not** pass that through today: each ticket dict has
-  `key, estimate, estimate_text, figure, figure_text, approved, approved_text, held, held_text,
-  review, problem, open, approvable` (line 121). Add `approved_id`, or have the backend look it up
-  from the day and key so the id never travels through QML.
-- **Parse what the person typed.** `cli.parse_day_minutes(text) -> int` accepts `1h15m`, `75` and
-  `1:15`, and raises `CliError` for anything else or more than a day. Use it; don't write another
-  parser. Note `CliError` is a plain `Exception`, so it needs turning into a `ValueError` for the
-  page (see `_expected` and `EXPECTED` in `ui_backend.py`).
-
-Suggested backend surface (keep the existing style: plain data in, plain data out, `ValueError` for
-anything the person should read):
-
-```python
-def parse_minutes(self, text: str) -> Dict[str, Any]:      # {"minutes": 75, "text": "1h15m"}
-def stage_figure(self, date: str, key: str, text: str) -> Dict[str, Any]
-def clear_figure(self, date: str, key: str) -> Dict[str, Any]
-def staged(self, date: str) -> Dict[str, int]              # for the day page to show
-def change_approved(self, date: str, key: str, text: str) -> Dict[str, Any]
-```
-
-Staged figures belong on the backend instance, next to `self._chosen` (the shell keeps one backend
-per app, so they survive moving between pages; a QML page is rebuilt each time and can't hold them).
-Clear a day's staged figures once `approve()` succeeds, as `window.py` does at line 471.
-
-In the QML, an editable figure fits the existing row: a `TextField` in place of the figure `Text`
-when the ticket is `approvable`, saving on `onAccepted` and on focus loss, the way
-`AsgardUI/SettingField.qml` does. Changing an **approved** figure must ask first; `window.py`'s
-wording is right: "Approve 45m for PROJ-42 instead of 1h30m? Odin posts the difference."
-
-### 2. Keep the GitHub list fresh
-
-`window.py` calls `desk.sync_github(con, settings)` on a timer every `poll_minutes` (`github_tick`,
-line 529) and shows whether the list it displays is fresh. `ui_backend.reviews()` only reads
-`desk.review_items(con)` from Muninn, so the Qt page shows whatever the last `baldur.cmd github
-sync` left behind.
-
-- `desk.sync_github` returns `None` when GitHub is off or no token is saved, and otherwise a
-  `github.SyncResult` with `login, repos, pulls_changed, reviews_new, requested, keyed_commits,
-  unchanged, requests, problems`.
-- It makes network calls, so it must go through `bridge.callAsync`, never `call` (the week page
-  already does that for `collect` and `estimate`: see `run()` and `onAsyncDone`).
-- A timer belongs in the page (`Timer { interval: ...; repeat: true }`) with the interval from
-  `poll_minutes`, and it must stop when the page isn't shown. Don't start a Python thread for it.
-- Say when the list was last refreshed, and don't make a failure loud: GitHub being unreachable
-  must not stop estimates or approvals.
-
-### 3. Small things the old window had
-
-- A **This week** button, to come back from a week you paged to (`b_this`, line 190).
-- **Ctrl+Left** and **Ctrl+Right** to step weeks (lines 169-170). `Shortcut` in the page.
-- **Reject asks first.** `window.py` confirms ("Nothing is posted for it."); the Qt page doesn't.
-  Use `AppDialog`, as Approve does.
-
-### 4. Then delete the tkinter window
-
-Only once 1-3 are done and checked on Windows:
-
-- Delete `apps/baldur/baldur/window.py` and `apps/baldur/baldur.pyw`.
-- Point Baldur's tile at the shared window: in `asgard/apps.json`, Baldur's `launch` is
-  `{app}/apps/baldur/baldur.pyw` and Heimdall's is `{app}/apps/heimdall/heimdall.pyw`, which is a
-  one-line file calling `asgard.ui.run(app="heimdall")`. Give Baldur the same one-line `.pyw`.
-- `tests/test_baldur.py` mentions the window in 7 places; move what still applies onto the backend,
-  in `tests/test_app_ui_backends.py`.
-- `MODULES.md`'s PySide6 section says "Baldur's window" is tkinter under "Stdlib alternative", and
-  `HANDOFF.md` says moving it is optional. Both change.
+1. **Delete `apps/baldur/baldur/window.py`.**
+2. **Rewrite `apps/baldur/baldur.pyw`** as the one-liner the other apps use. Copy
+   `apps/heimdall/heimdall.pyw` and change `run(app="heimdall")` to `run(app="baldur")`; keep its
+   `ASGARD_APP` / two-folders-up `sys.path` preamble verbatim, since the installed copy depends on
+   it. **`asgard/apps.json` needs no change**: Baldur's `launch` target is already
+   `{app}/apps/baldur/baldur.pyw`, so rewriting that file repoints the tile.
+3. **`tests/test_baldur.py`: delete `WindowTests` (lines 1554-1658, 17 tests)** and the
+   `from baldur import window` import and `messagebox` patches in its `setUp`. Check each test
+   against `BaldurBackendTests` before dropping it; the figure and rejection behaviours are already
+   there, but anything about *week paging* or *the day report text* that is only asserted here
+   should move onto the backend rather than disappear. `DeskTests` stays as it is: it tests
+   `desk.py`, which both windows use.
+4. **Docs.** `MODULES.md` has two stale claims: the PySide6 row's "Stdlib alternative" calls tkinter
+   "which Baldur's window uses", and there is a whole `Baldur's window` row saying moving it is
+   optional. `HANDOFF.md` says the same in its Oct-10 section, in "Not done", and in the shared
+   window's status row. All of them change, and this file gets deleted with them.
 
 ## Rules this work must keep
 
 From `AGENTS.md`, and they are the reason the code looks as it does:
 
-1. **Baldur biases down.** Nothing here may raise a figure on its own. A person typing a bigger
-   number is fine (it is their decision); code choosing one is not.
-2. **Decisions are final.** An approved figure is never edited: `change_figure` supersedes through
-   `muninn.baldur.change_approval`, and database triggers refuse anything else. Don't work around a
-   trigger; if one refuses, the message is the answer.
-3. **Baldur never writes to Jira.** Approving records a decision. Odin posts it, and only what Jira
-   is missing.
-4. **Backends stay plain Python.** No Qt import in `ui_backend.py`, so it stays testable without a
-   display. The bridge turns a `ValueError` into a message for the page and logs anything else as
-   unexpected, which is why `_expected()` exists.
-5. **Nothing slow on the UI thread.** Git and network work goes through `bridge.callAsync` or
-   `bridge.spawn`. Never hold a Muninn write transaction across either.
-6. **Muninn is opened read-only for reads** (`_open(readonly=True)` keeps one connection) and with
-   its own connection for writes. Don't share one.
+1. **Baldur biases down.** A person typing a bigger number is their decision; code choosing one is
+   not. `test_a_person_may_type_a_bigger_number` is the line between the two.
+2. **Decisions are final.** An approved figure is never edited; it is superseded through
+   `muninn.baldur.change_approval`, and triggers refuse anything else. If a trigger refuses, its
+   message is the answer, not something to work around.
+3. **Baldur never writes to Jira.** Approving records a decision; Odin posts it.
+4. **Backends stay plain Python.** No Qt import in `ui_backend.py`. The bridge turns a `ValueError`
+   into a message for the page and logs anything else as unexpected, which is why `_expected()`
+   exists.
+5. **Nothing slow on the UI thread**, and never a Muninn write transaction across git or network.
+6. **Reads open and close** (`_read()`); writes get their own connection. Don't cache either: a
+   cached read connection is what broke the Windows build on `c5ead53`.
 
 ## How to check it
 
 ```
-python tools/run_tests.py                      # from the repo root; 709 pass today, 3 known macOS
+python tools/run_tests.py                      # from the repo root
 python tools/run_tests.py Asgard/tests/test_app_ui_backends.py
 bash Asgard/tools/baldur_smoke.sh              # must still end PROJ-42 1h30m, PROJ-51 30m
 ruff check .
 ```
 
-- PySide6 isn't needed for the backend tests, and `test_ui_qt.py` skips without it. With it
-  installed, `test_ui_qt.py` loads every page and asserts `qml_warnings == []`; keep that true.
-- There is no display in CI. Offscreen rendering is how the pages are checked:
-  `QT_QPA_PLATFORM=offscreen`, then `shell.Shell(home=True)`, `load()`, `navigation.go("baldur:day")`
-  and `grabWindow().save(...)`. A small script for this is worth writing again if you want pictures.
-- New behaviour needs a test, and every bug fix a regression test that fails without the fix.
+`test_ui_qt.py` skips without PySide6; with it, it loads every page and asserts
+`qml_warnings == []`. Keep that true. There is no display in CI: `QT_QPA_PLATFORM=offscreen`, then
+`shell.Shell(home=True)`, `load()`, `navigation.go("baldur:day")`, `grabWindow().save(...)`.
 
 ## What can't be checked away from Windows
 
-Say so plainly in the handoff note rather than implying it works:
+Needs target-machine verification, and should be said plainly rather than implied:
 
-- The pages at real DPI with Segoe UI, and Narrator reading the new fields.
-- Approving against a real Muninn with real proposals, and Odin then posting them.
-- The GitHub sync against Enterprise Server (the host, token type and server version are still
-  waiting on the owner; see `HANDOFF.md`, "Waiting on").
+- The editable figure fields at real DPI with Segoe UI, and Narrator reading them.
+- Approving and then changing a figure against a real Muninn, with Odin posting the difference.
+- The GitHub timer against Enterprise Server (host, token type and server version are still waiting
+  on the owner; see `HANDOFF.md`, "Waiting on").
 
-## Files you will touch
-
-```
-apps/baldur/baldur/ui_backend.py     the five new methods, staged figures, sync_github
-apps/baldur/ui/Day.qml               editable figures, the change-approved dialog, reject confirm
-apps/baldur/ui/Week.qml              This week, Ctrl+arrows, the GitHub timer and freshness
-tests/test_app_ui_backends.py        BaldurBackendTests: parsing, staging, clearing, change_approved
-tests/test_ui_qt.py                  the pages still load with no warnings
-asgard/apps.json, MODULES.md, HANDOFF.md    only in step 4, when the old window goes
-```
-
-Leave `desk.py`, `store.py`, `estimate.py` and `muninn/baldur.py` alone: everything needed is
-already there, and estimation changes need the direction tests and an independent review.
+That last pass is the only real argument for keeping `window.py` another week. Once someone has
+driven the Qt day page on the workstation, delete it.

@@ -1,13 +1,11 @@
-<!-- Snapshot exported 2026-10-04 from the live Claude Doc: https://claude.ai/code/artifact/bc161cb2-9cfc-4f28-9e1e-8a1075972208
+<!-- Snapshot of the live Claude Doc: https://claude.ai/code/artifact/bc161cb2-9cfc-4f28-9e1e-8a1075972208
      The live doc is the source of truth; diagrams appear here only as placeholders.
-     Edited here on 2026-10-09 (branch claude/baldur-estimation), not yet in the live doc: the v4
-     sentences and check count in the schema paragraph, Baldur's tables in "Who owns what", "Agent estimates (v4)", the
-     two v4 indexes, the migrations list, and the encryption open decision; and the 2026-10-09 review's fixes in
-     "Agent estimates (v4)". Edited on 2026-10-10: v5 (`meeting_subtasks`) in the schema paragraph, "Who owns what", the
-     Odin tables, the indexes, the migrations list, "Moving Odin into Muninn" and the state.db open decision; and
-     (refinements spec) the two agent estimate triggers in "Agent estimates (v4)" and `odin settle` in step 4 of the
-     posting protocol.
-     Carry these over to the live doc. -->
+     Exported Oct 4; on Oct 11 the repo's edits since (v2 to v5, the hardening, agent estimates, Odin's move,
+     operations, decisions) were merged into the live doc, and the live doc's own edits since Oct 4 (the
+     repos table's source_id and github_repo rows, and the paragraph on collect.relabel) into this file.
+     They match, except that the live doc's byline is a date and mention chip and it shows links to repo
+     files as paths. -->
+
 
 # Muninn data layer design
 
@@ -115,7 +113,7 @@ Seven shared tables record where every fact came from, when, and which changes e
 | Column | Type | Rules | Notes |
 | --- | --- | --- | --- |
 | `id` | INTEGER | primary key |  |
-| `kind` | TEXT | jira, confluence, git, github, calendar, teams, security change, manual | `manual` = pasted or file input |
+| `kind` | TEXT | jira, confluence, git, github, calendar, teams, secchm, manual | `manual` = pasted or file input |
 | `name` | TEXT | `UNIQUE` | `jira-dc`, `github`, `local-git`, `paste` |
 | `base_url` | TEXT | nullable | NULL for local git and pasted input |
 | `created_at` | ts | defaults to now |  |
@@ -296,13 +294,15 @@ Baldur owns thirteen tables in two groups: what happened in git and on GitHub, a
 | Column | Type | Rules | Notes |
 | --- | --- | --- | --- |
 | `id` | INTEGER | primary key |  |
-| `source_id` | INTEGER | FK sources, nullable | The GitHub source |
+| `source_id` | INTEGER | FK sources, nullable | local-git for a clone, the github source for a review-only row |
 | `name` | TEXT | not null | Folder or repo name |
-| `github_repo` | TEXT | UNIQUE, nullable | owner/name, for the GitHub API |
+| `github_repo` | TEXT | UNIQUE, nullable | owner/name on your GitHub (the owner's is Enterprise Server), one row per repository, compared without case; NULL for a clone from another host |
 | `local_path` | TEXT | UNIQUE, nullable | NULL for repos you only review on GitHub |
 | `remote_url`, `default_branch` | TEXT |  | `default_branch` bounds `git log main..branch` |
 | `active` | INTEGER | 0 or 1 | 0 stops scanning without losing history |
 | `last_scanned_at`, `created_at` | ts |  |  |
+
+Baldur's collector keeps `github_repo` straight after every collection (`collect.relabel`). Muninn follows one GitHub: the `sources` row named `github` holds its API address (Baldur's `github_api`), and pointing `github_api` at another GitHub clears the old one's pull requests and review-only rows. When clones share a name, a clone whose folder exists wins, then the one already holding it, then the oldest row; pull requests move with the name, and a name no clone wants any more keeps its pull requests on a review-only row. The GitHub step attaches pull requests to whichever row holds the name (compared without case), makes a review-only row only when none does, and first checks that the `github` source matches `github_api`.
 
 **`commits`**: one row per commit.
 
@@ -806,6 +806,6 @@ Rows are short text, so a year of one engineer's work should stay in the tens of
 - [x] **Database engine.** Decided (Oct 9): stay on SQLite now that pinned packages are allowed. Postgres or SQL Server need a server and admin rights; DuckDB is a native wheel with a single-writer file lock across processes; SQLCipher and apsw are native extensions App Control may block; an ORM such as SQLAlchemy would become every app's dependency, because every app imports `asgard.muninn`. Revisit only for the team view under **Scope**.
 - [ ] **Posting mode.** Odin posts approved worklogs on its next run (proposed, since approving in Baldur is the consent), or waits for a Post button in Odin?
 - [ ] **Which resolutions count as wins.** Proposed: all except Won't Do, Duplicate and Cannot Reproduce, editable in Freya's settings.
-- [x] **Time zone travel.** Decided (decided Oct 9): US time zones only. A day is local to wherever the laptop is when Baldur estimates it and Odin posts it. The rare shift is accepted rather than pinning a zone in `meta`. Baldur's own worklogs count for their approved day whatever the zone; a worklog logged by hand near midnight can fall in the neighbouring day after a move between US zones (at most 6 hours apart).
+- [x] **Time zone travel.** Decided (Oct 9): US time zones only. A day is local to wherever the laptop is when Baldur estimates it and Odin posts it. The rare shift is accepted rather than pinning a zone in `meta`. Baldur's own worklogs count for their approved day whatever the zone; a worklog logged by hand near midnight can fall in the neighbouring day after a move between US zones (at most 6 hours apart).
 - [ ] **Encryption beyond BitLocker.** SQLCipher replaces `sqlite3` with a compiled module. That would make Muninn's package depend on a package, which every app and Odin import; the dependency policy keeps it standard library. It would also need IT approval.
 - [ ] **Retention.** Confirm the defaults above against your records schedule.

@@ -1,6 +1,22 @@
 # Asgard handoff (2026-10-10, Asgard 0.4.0 in progress, not shipped)
 
-## Latest (2026-10-11): the Windows build caught two things the Mac can't
+## Latest (2026-10-11): Heimdall template variables and libraries (issue #11)
+- **The language** (`apps/heimdall/heimdall/variables.py`, standard library). A template's field value can hold `{NAME:FORMAT(args):"Friendly name"}`, where FORMAT is `CHECKBOX("desc")`, `TEXTBOX('ip_v4','ip_v6','string','bool','int','float')`, `DROPDOWN('a','b')` or `LIBRARY('name')`. `{NAME}` repeats a variable, `{{`/`}}` is a brace, and `${today}` is still the placeholder. Bad definitions fail when the template is saved, with what to change. One name with two meanings is refused, and so is a name used but never defined. `templates.plan()` resolves them (`given=`, `libraries=`), so the browser fill and a future API fill get the same `Plan`. Values are inserted as typed; only the template's own text is searched for `$` and braces.
+- **Libraries** (`heimdall/library.py`, `asgard/dpapi.py`). `heimdall library import FILE` reads a published JSON file and keeps a DPAPI-encrypted copy in `heimdall\libraries\`. Importing again updates it. Listing and searching use names and descriptions only. `"renders": "name"` libraries fill in the entry name and Heimdall drops their values at import. Off Windows, libraries are refused unless `HEIMDALL_UNPROTECTED_LIBRARIES=1`. Windows ignores that setting and won't read an unencrypted copy.
+- **Surfaces.** CLI: `fill --var NAME=VALUE`, `library import|list|show|remove`, a `--libraries FOLDER` option, and `template show` listing what a template asks for. Window: **This template asks for** on the Templates page (text, checkbox, dropdown, library search-and-pick), and a **Libraries** card on the Form page. A library pick travels to the child fill as the entry's name, never its value.
+- **Templates file v2.** Version 1 files are read with their braces as plain text, so nothing existing changes meaning. They're written as v2 on the next change, after which an older Heimdall refuses the file (it says so; nothing is overwritten).
+- **Decisions, made without the owner** (say if any should change):
+  - A checkbox fills in `Yes` or `No`.
+  - `ip_v4`/`ip_v6` take a single address. `10.0.0.0/24` is refused; a `cidr` check would be a one-line addition.
+  - A list value in a library fills in as `a, b`.
+  - A library entry fills in its value unless the library says `"renders": "name"`.
+  - The "central source" is a file the person imports (from a repository checkout or a share). Nothing is fetched over the network.
+  - `LIBRARY:('x')`, the issue's one example with a colon before the bracket, is refused with "no colon before the bracket", not accepted.
+- **What the encryption is not.** DPAPI protects the libraries from other accounts, machines and backups, not from the user: anything running as them can decrypt. The issue asked that users "can't plum into the information". Against a determined user, only `"renders": "name"`, or a library that never reaches the machine, delivers that. Recorded in `README.md` and `docs/security-and-data.md`.
+- **Verified:** 41 new tests in `tests/test_heimdall_variables.py` and a Qt page-load case in `test_ui_qt.py`, with no QML warnings and screenshots of both pages. Ruff found nothing in the changed files. Vermin passes for 3.9. **Needs target-machine verification:** real DPAPI (`DpapiTests` and the CLI library tests use it on Windows CI, so the next `Package Asgard` run is the first real check), and the library picker's click-to-pick at real DPI with Narrator.
+- **Not touched:** `heimdall/snow_test.py` and `HEIMDALL_HANDOFF.md` are untracked files beside the code. `snow_test.py` holds a hard-coded user name and password and has 3 lint findings. It shouldn't be committed as it is.
+
+## Earlier (2026-10-11): the Windows build caught two things the Mac can't
 Run 38097560592 (`Package Asgard`, commit c5ead53) failed: 1 failure and 6 errors, all from the window work, none visible on macOS.
 
 - **An open Muninn connection.** Baldur's backend cached a read connection per thread, so every thread-pool thread that ever served a page left `muninn.db` open. Windows can't delete or replace an open file, so each test's temporary folder failed to clean up (`PermissionError: WinError 32`), and the same handle would have blocked an Asgard upgrade. Fixed by not caching: `_read()` opens and closes around one read, as Odin's backend already did. `Bridge.close_backend()` now also closes a backend that offers `close()` when the window shuts.

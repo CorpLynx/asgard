@@ -3,7 +3,8 @@
     heimdall init                       create the form file from the example
     heimdall fields                     list the form's fields
     heimdall template list | show | save | edit | delete
-    heimdall fill [--template NAME]     open Edge, fill the form, stop before Submit
+    heimdall library import | list | show | remove
+    heimdall fill [--template NAME] [--var NAME=VALUE]   open Edge, fill the form, stop before Submit
 
 Exit codes: 0 done, 1 an expected problem (the message says what to do), 2 usage, 130 stopped.
 """
@@ -18,11 +19,15 @@ from typing import Any, Optional, Sequence
 
 from . import browser   # imports Playwright only inside browser.run()
 from . import form as forms
+from . import library as libs
 from . import templates as tpl
+from . import variables as tvars
 from .form import Form, FormError
+from .library import LibraryError
 from .templates import Plan, Store, TemplateError
+from .variables import VariableError
 
-EXPECTED = (FormError, TemplateError)
+EXPECTED = (FormError, TemplateError, LibraryError, VariableError)
 
 
 def _say(text: str) -> None:
@@ -49,6 +54,10 @@ def _load_form(args: argparse.Namespace) -> Form:
 
 def _store(args: argparse.Namespace) -> Store:
     return Store(args.templates)
+
+
+def _libraries(args: argparse.Namespace) -> libs.Store:
+    return libs.Store(args.libraries)
 
 
 # ------------------------------------------------------------------ commands
@@ -110,10 +119,12 @@ def cmd_template_list(args: argparse.Namespace) -> int:
 def cmd_template_show(args: argparse.Namespace) -> int:
     form = _load_form(args)
     saved = _store(args).get(args.name)
-    bad = tpl.problems(form, saved)
+    bad = tpl.problems(form, saved, _libraries(args))
+    defined = [] if bad else tpl.variables_of(form, saved)
     if args.json:
         _emit({"name": saved.name, "description": saved.description, "updated": saved.updated,
-               "attachment": saved.attachment, "values": saved.values, "problems": bad})
+               "attachment": saved.attachment, "values": saved.values, "problems": bad,
+               "variables": [v.to_json() for v in defined]})
         return 0
     _say(f"{saved.name}" + (f"  - {saved.description}" if saved.description else ""))
     for f in form.fields:
@@ -123,9 +134,23 @@ def cmd_template_show(args: argparse.Namespace) -> int:
             value, source = f.default, "  (form default)"
         _say(f"  {f.label}: {_show_value(value)}{source}")
     _say(f"  Attachment: {saved.attachment or '(none)'}")
+    if defined:
+        _say("  Asks for (give each with --var NAME=VALUE when you fill):")
+        for v in defined:
+            _say(f"    {v.name}: {v.label}, {_describe_variable(v)}")
     for problem in bad:
         _say(f"  Problem: {problem}")
     return 1 if bad else 0
+
+
+def _describe_variable(v: tvars.Variable) -> str:
+    if v.kind == "CHECKBOX":
+        return "true or false" + (f' ("{v.description}")' if v.description else "")
+    if v.kind == "TEXTBOX":
+        return "text" + (f" ({', '.join(v.args)})" if v.args else "")
+    if v.kind == "DROPDOWN":
+        return "one of " + ", ".join(v.args)
+    return f"an entry from the library {v.library}"
 
 
 def cmd_template_save(args: argparse.Namespace) -> int:
@@ -164,7 +189,16 @@ def cmd_template_delete(args: argparse.Namespace) -> int:
 def cmd_fill(args: argparse.Namespace) -> int:
     form = _load_form(args)
     saved = _store(args).get(args.template) if args.template else None
-    the_plan = tpl.plan(form, saved, tpl.parse_assignments(args.set), args.attachment, args.no_attachment)
+    overrides = tpl.parse_assignments(args.set)
+    given = tvars.parse_assignments(args.var)
+    if not given and (saved is None or not tpl.problems(form, saved)):    # plan() explains a drifted template
+        asks = tpl.variables_of(form, saved, overrides)
+        if any(v.required for v in asks):
+            hint = " ".join(f'--var "{v.name}=..."' for v in asks if v.required)
+            raise TemplateError(f"This template asks for {', '.join(v.label for v in asks if v.required)}. "
+                                f"Give them with {hint} ('heimdall template show NAME' says what each takes).")
+    the_plan = tpl.plan(form, saved, overrides, args.attachment, args.no_attachment, given=given,
+                        libraries=_libraries(args))
     if args.dry_run:
         if args.json:
             body = the_plan.to_json()
@@ -182,9 +216,73 @@ def cmd_fill(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_library_import(args: argparse.Namespace) -> int:
+    store = _libraries(args)
+    lib, before = store.import_file(args.file)
+    what = "Updated" if before is not None else "Imported"
+    was = f", was {before}" if before is not None else ""
+    _say(f"{what} the library {lib.name}: {len(lib.entries)} entries{was}"
+         + (f", version {lib.version}" if lib.version else "") + ".")
+    if lib.renders == "name":
+        _say("It fills in entry names; Heimdall didn't keep the values.")
+    if store.encrypted:
+        _say(f"Heimdall keeps its own encrypted copy, so you can delete {args.file}.")
+    else:
+        _say(f"Stored UNENCRYPTED ({libs.UNPROTECTED_ENV}=1). Use this only to try Heimdall out.")
+    return 0
+
+
+def cmd_library_list(args: argparse.Namespace) -> int:
+    store = _libraries(args)
+    rows = [store.load(name).info() for name in store.names()]
+    if args.json:
+        _emit({"libraries": rows})
+        return 0
+    if not rows:
+        _say("No libraries yet. Import one with: heimdall library import FILE")
+        return 0
+    for row in rows:
+        note = f"  - {row['description']}" if row["description"] else ""
+        version = f", version {row['version']}" if row["version"] else ""
+        _say(f"{row['name']}  ({row['entries']} entries, fills in the {row['renders']}{version}){note}")
+    return 0
+
+
+def cmd_library_show(args: argparse.Namespace) -> int:
+    if args.limit < 1:
+        raise LibraryError("--limit must be 1 or more.")
+    lib = _libraries(args).load(args.name)
+    matches = lib.search(args.search, len(lib.entries)) if args.search else list(lib.entries)
+    entries = matches[:args.limit]
+    if args.json:
+        body = lib.info()
+        body["shown"] = [lib.entry_json(e) for e in entries]
+        _emit(body)
+        return 0
+    _say(f"{lib.name}" + (f"  - {lib.description}" if lib.description else ""))
+    _say(f"  {len(lib.entries)} entries; a pick fills in the entry's {lib.renders}. Imported {lib.imported_at}"
+         + (f" from {lib.source}" if lib.source else "") + ".")
+    for e in entries:
+        _say(f"  {e.name}" + (f"  - {e.description}" if e.description else ""))
+    hidden = len(matches) - len(entries)
+    if hidden > 0:
+        _say(f"  ... and {hidden} more. Narrow it with --search TEXT, or show more with --limit N.")
+    if args.search and not entries:
+        _say("  Nothing matches. Searches look at names and descriptions.")
+    return 0
+
+
+def cmd_library_remove(args: argparse.Namespace) -> int:
+    gone = _libraries(args).remove(args.name)
+    _say(f"Removed the library {gone}. Templates that use it can't be filled until it's imported again.")
+    return 0
+
+
 def _print_plan(form: Form, the_plan: Plan) -> None:
     _say(f"Would open {_item_url(form)}")
     _say(f"Template: {the_plan.template or '(none; form defaults and --set only)'}")
+    for var, text in the_plan.variables:
+        _say(f"  {{{var.name}}} {var.label}: {text}")
     for f, value in the_plan.steps:
         _say(f"  {f.label}: {_show_value(value)}")
     _say(f"  Attachment: {the_plan.attachment or '(none)'}")
@@ -202,6 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="heimdall", description="Heimdall: fill security change submissions from templates.")
     parser.add_argument("--form", type=Path, help="form file (default: settings\\heimdall.json under Asgard's data folder)")
     parser.add_argument("--templates", type=Path, help="templates file (default: settings\\heimdall-templates.json)")
+    parser.add_argument("--libraries", type=Path, help="libraries folder (default: heimdall\\libraries)")
     sub = parser.add_subparsers(dest="command", metavar="command")
 
     def add(group: Any, name: str, func: Any, help_text: str) -> argparse.ArgumentParser:
@@ -252,9 +351,26 @@ def build_parser() -> argparse.ArgumentParser:
     p = add(tsub, "delete", cmd_template_delete, "Delete a template")
     p.add_argument("name")
 
+    lib = sub.add_parser("library", help="Import, list, show or remove the libraries LIBRARY variables pick from",
+                         description="Libraries are named lists, kept encrypted on this computer.")
+    lib.set_defaults(func=None, group=lib)
+    lsub = lib.add_subparsers(dest="library_command", metavar="action")
+    p = add(lsub, "import", cmd_library_import, "Import a published library file, or update one already here")
+    p.add_argument("file", type=Path)
+    json_flag(add(lsub, "list", cmd_library_list, "List the libraries on this computer"))
+    p = add(lsub, "show", cmd_library_show, "Show a library's entries (names and descriptions)")
+    p.add_argument("name")
+    p.add_argument("--search", metavar="TEXT", help="only entries whose name or description holds TEXT")
+    p.add_argument("--limit", type=int, default=50, metavar="N", help="show at most N entries (default 50)")
+    json_flag(p)
+    p = add(lsub, "remove", cmd_library_remove, "Remove a library from this computer")
+    p.add_argument("name")
+
     p = add(sub, "fill", cmd_fill, "Open Edge, fill the form from a template, and stop before Submit")
     p.add_argument("--template", "-t", metavar="NAME")
     setting(p)
+    p.add_argument("--var", action="append", default=[], metavar="NAME=VALUE",
+                   help="a value for one of the template's variables; repeat for each")
     group = p.add_mutually_exclusive_group()
     group.add_argument("--attachment", metavar="PATH", help="attach this file instead of the template's")
     group.add_argument("--no-attachment", action="store_true", help="don't attach anything this time")

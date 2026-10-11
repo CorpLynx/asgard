@@ -78,7 +78,7 @@ jobs:
           python-version: "3.12"
 
       - name: Dev tools, pinned
-        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt vermin==1.6.0 actionlint-py==1.7.7.23
 
       - name: ruff
         run: ruff check .

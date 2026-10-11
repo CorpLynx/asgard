@@ -42,10 +42,12 @@ class PathError(Exception):
 def shim_text(program: str, script: Optional[str] = None) -> str:
     """asgard.cmd: run program (and script) with every argument, and keep the exit code.
 
-    Everything happens on one line ending in `& exit /b`: cmd.exe reads a batch file a line at a time,
-    so when `asgard uninstall` deletes this file mid-run, the line it's on has already been read and
-    it exits cleanly instead of saying "The batch file cannot be found." `exit /b` with no number
-    returns the program's own exit code.
+    The program runs on one line and `exit /b %ERRORLEVEL%` on the next, so the second is read, and
+    %ERRORLEVEL% worked out, after the program has finished. (An earlier `program & exit /b` on one
+    line lost the exit code on Windows: the Package Asgard job caught it, 0 where the program said 2.)
+    cmd.exe reads a batch file a line at a time, so when `asgard uninstall` deletes this file mid-run
+    it can't read the second line and may print "The batch file cannot be found." after the work is
+    done; the exit code of that one command is cmd's, not the program's.
     """
     for part in (program, script or ""):
         if any(c in part for c in '"%\r\n'):
@@ -54,7 +56,8 @@ def shim_text(program: str, script: Optional[str] = None) -> str:
     lines = ["@echo off",
              "rem asgard: Asgard's command, from any folder. Try: asgard --help",
              "rem Setup writes this file and Valhalla removes it; asgard.cmd isn't for editing.",
-             f"{target} %* & exit /b"]
+             f"{target} %*",
+             "exit /b %ERRORLEVEL%"]
     text = "\r\n".join(lines) + "\r\n"
     text.encode("ascii")                       # .cmd files are ASCII (AGENTS.md); a non-ASCII path can't go here
     return text

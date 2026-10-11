@@ -496,8 +496,10 @@ class PathTests(Home):
         self.assertTrue(text.endswith("\r\n"))
         self.assertNotIn("\n", text.replace("\r\n", ""), "CRLF only")
         self.assertEqual(text.splitlines()[0], "@echo off")
-        self.assertEqual(text.splitlines()[-1], r'"C:\Program Files\Python312\python.exe" '
-                         r'"C:\Users\Dev\AppData\Local\Asgard\app\asgard\cli.py" %* & exit /b')
+        self.assertEqual(text.splitlines()[-2:], [r'"C:\Program Files\Python312\python.exe" '
+                                                  r'"C:\Users\Dev\AppData\Local\Asgard\app\asgard\cli.py" %*',
+                                                  "exit /b %ERRORLEVEL%"],
+                         "the exit code is read on its own line, after the program has run")
         app = Path(r"C:\Asgard\app")
         program, script = shim.shim_command(app, True, "unused")
         self.assertEqual((Path(program).name.split(".")[0], script), ("asgard-cli", None))
@@ -515,7 +517,8 @@ class PathTests(Home):
         folder = paths.bin_dir()
         self.assertEqual(items, [{"kind": "dir", "path": str(folder)}, {"kind": "path", "path": str(folder)}])
         written = (folder / "asgard.cmd").read_bytes()
-        self.assertIn(f'"{sys.executable}" "{app / "asgard" / "cli.py"}" %* & exit /b'.encode("ascii"), written)
+        self.assertIn(f'"{sys.executable}" "{app / "asgard" / "cli.py"}" %*\r\nexit /b %ERRORLEVEL%\r\n'.encode("ascii"),
+                      written)
         self.assertEqual(reg.path()[0], rf"C:\tools;{folder}")
         self.assertIn("asgard --help", out.getvalue())
         with contextlib.redirect_stdout(io.StringIO()):
@@ -570,7 +573,7 @@ class PathTests(Home):
 
 @unittest.skipUnless(os.name == "nt", "asgard.cmd runs under cmd.exe")
 class ShimOnWindowsTests(Home):
-    """The shim as cmd.exe runs it: the exit code comes back, and deleting it mid-run (asgard uninstall) is clean."""
+    """The shim as cmd.exe runs it: the program's exit code comes back, and the file can be deleted mid-run."""
 
     def shim(self, program, script):
         return shim.write_shim(self.dir / "bin", program, str(script))
@@ -584,14 +587,27 @@ class ShimOnWindowsTests(Home):
                               timeout=120)
         self.assertEqual(done.returncode, 2)
 
-    def test_deleting_it_while_it_runs_ends_cleanly(self):
-        script = self.dir / "uninstall_like.py"
-        script.write_text("import os, sys\nos.remove(sys.argv[1])\nsys.exit(3)\n")
+    def test_every_exit_code_comes_back(self):
+        script = self.dir / "exit_with.py"
+        script.write_text("import sys\nsys.exit(int(sys.argv[1]))\n")
         target = self.shim(sys.executable, script)
-        done = subprocess.run([str(target), str(target)], capture_output=True, text=True, env=self.env(), timeout=120)
+        for code in (0, 1, 2, 3, 130):
+            with self.subTest(code):
+                done = subprocess.run([str(target), str(code)], capture_output=True, text=True, env=self.env(),
+                                      timeout=120)
+                self.assertEqual(done.returncode, code)
+
+    def test_deleting_it_while_it_runs_still_does_the_work(self):
+        """asgard uninstall removes this file while cmd.exe is reading it. cmd may then say it can't find the
+        batch file, after the work is done; what matters is the program ran to the end and the file is gone."""
+        script = self.dir / "uninstall_like.py"
+        marker = self.dir / "finished.txt"
+        script.write_text("import os, sys\nos.remove(sys.argv[1])\nopen(sys.argv[2], 'w').write('done')\n")
+        target = self.shim(sys.executable, script)
+        subprocess.run([str(target), str(target), str(marker)], capture_output=True, text=True, env=self.env(),
+                       timeout=120)
         self.assertFalse(target.exists())
-        self.assertEqual(done.returncode, 3)
-        self.assertNotIn("cannot be found", done.stdout + done.stderr)
+        self.assertEqual(marker.read_text(), "done")
 
 
 if __name__ == "__main__":

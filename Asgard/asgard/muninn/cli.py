@@ -163,8 +163,8 @@ def cmd_retention(path: Optional[Path], value: str) -> int:
     return 0
 
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="Asgard.pyw --muninn", description="Look after Muninn, Asgard's database.")
+def build_parser(prog: str = "Asgard.pyw --muninn") -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog=prog, description="Look after Muninn, Asgard's database.")
     p.add_argument("--db", type=Path, help=argparse.SUPPRESS)          # tests point these at a temp folder
     p.add_argument("--backups", type=Path, help=argparse.SUPPRESS)
     sub = p.add_subparsers(dest="command", required=True)
@@ -182,8 +182,9 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+def main(argv: Optional[List[str]] = None, prog: str = "Asgard.pyw --muninn") -> int:
+    """prog is how help names the command: Asgard.pyw --muninn, or asgard muninn (asgard/cli.py)."""
+    args = build_parser(prog).parse_args(argv)
     try:
         if args.command == "prepare":
             return cmd_prepare(args.db, args.backups)

@@ -733,6 +733,17 @@ class StdioTests(YsildirCase):
         self.assertEqual(catalog["schema_version"], muninn.SCHEMA_VERSION)
         self.assertIn("serve started 5 tools on", self.log())
 
+    async def test_the_command_setup_writes_serves_through_the_asgard_command(self):
+        """clients.launch() is asgard ysildir serve: the dispatcher must add nothing to stdout."""
+        command, args = clients.launch()
+        self.assertEqual(args[-2:], ["ysildir", "serve"])
+        params = StdioServerParameters(command=command, args=args, env={"ASGARD_HOME": str(self.dir)})
+        with self.assertNoLogs("mcp.client.stdio", "ERROR"):
+            async with Client(params, read_timeout_seconds=60) as client:
+                self.assertEqual(client.server_info.name, "ysildir")
+                guide = text(await client.call_tool("asgard_guide", {"topic": "muninn"}))
+        self.assertTrue(guide.startswith("<!-- muninn-agent-1 -->"))
+
     def test_stdout_is_protocol_only_and_closing_stdin_ends_it(self):
         env = dict(os.environ, ASGARD_HOME=str(self.dir))
         proc = subprocess.Popen([sys.executable, str(YSILDIR / "cli.py"), "serve"], stdin=subprocess.PIPE,
@@ -867,7 +878,7 @@ class SetupTests(unittest.TestCase):
         data = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual((data["keep"], data["mcpServers"]["other"]), (1, {"command": "x"}))
         entry = data["mcpServers"]["ysildir"]
-        self.assertEqual((entry["command"], entry["args"]), (sys.executable, [str(clients.CLI), "serve"]))
+        self.assertEqual((entry["command"], entry["args"]), (sys.executable, [str(clients.ASGARD_COMMAND), "ysildir", "serve"]))
         self.assertEqual(entry["autoApprove"], ["asgard_guide", "muninn_catalog", "baldur_estimates"],
                          "only the read-only tools that are on; recording stays the person's click")
         self.assertEqual(self.setup(kiro=str(self.ws)), [f"Kiro, this workspace: kept {path}"])
@@ -881,7 +892,7 @@ class SetupTests(unittest.TestCase):
         with self.assertRaisesRegex(ysildir.Refused, "may have comments") as caught:
             self.setup(vscode=str(self.ws))
         self.assertIn('"servers"', str(caught.exception))
-        self.assertIn(json.dumps(str(clients.CLI)), str(caught.exception))
+        self.assertIn(json.dumps(str(clients.ASGARD_COMMAND)), str(caught.exception))
         self.assertEqual(path.read_text(encoding="utf-8"), '// my servers\n{"servers": {}}\n')
 
     def test_print_shows_everything_and_changes_nothing(self):
@@ -916,9 +927,9 @@ class SetupTests(unittest.TestCase):
         calls = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(calls[0]["argv"][0], "--add-mcp")
         self.assertEqual(json.loads(calls[0]["argv"][1]),
-                         {"name": "ysildir", "command": sys.executable, "args": [str(clients.CLI), "serve"]})
+                         {"name": "ysildir", "command": sys.executable, "args": [str(clients.ASGARD_COMMAND), "ysildir", "serve"]})
         self.assertEqual(calls[1]["argv"], ["mcp", "add", "--scope", "project", "ysildir", "--", sys.executable,
-                                            str(clients.CLI), "serve"])
+                                            str(clients.ASGARD_COMMAND), "ysildir", "serve"])
         self.assertEqual(Path(calls[1]["cwd"]).resolve(), self.ws)
         self.assertEqual([c["argv"][:2] for c in calls[2:]], [["mcp", "remove"], ["mcp", "add"]], "--force replaces")
 

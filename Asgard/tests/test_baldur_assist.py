@@ -14,6 +14,7 @@ import datetime as dt
 import io
 import json
 import random
+import sqlite3
 import sys
 import unittest
 from pathlib import Path
@@ -646,6 +647,42 @@ class AgentGuardTests(unittest.TestCase):
             with self.subTest(command):
                 self.assertIsNone(self.guard.verdict(command))
 
+    def test_the_asgard_command_is_read_the_same_way(self):
+        """asgard <app> <command> (issue #10): bare, the Path shim, the packaged build's programs, asgard\\cli.py
+        with python, -m asgard.cli, and inside other commands."""
+        shim = r'"C:\Users\Dev User\AppData\Local\Asgard\bin\asgard.cmd"'
+        app = r"C:\Users\Dev User\AppData\Local\Asgard\app"
+        for command in ("asgard baldur approve --date 2026-10-01", "asgard.cmd baldur reject 12",
+                        f"{shim} baldur change 12 2h", rf'"{app}\asgard-cli.exe" baldur actual 2026-10-01 6h',
+                        rf'"{app}\Asgard.exe" baldur calibrate --accept', "asgard baldur approve --date today --ai 3f2a",
+                        rf'py -3 "{app}\asgard\cli.py" baldur approve --date today',
+                        "python -m asgard.cli baldur approve --date today",
+                        rf'cd "{app}\asgard"; py -3 .\cli.py baldur approve --date today',
+                        'cmd /c "asgard baldur approve --date 2026-10-01"',
+                        'powershell -NoProfile -Command "asgard baldur setup --email x@agency.gov"',
+                        "Start-Process asgard -ArgumentList 'baldur','approve','--date','2026-10-01'",
+                        'Start-Process -FilePath asgard.cmd -ArgumentList "baldur reject --date 2026-10-01" -Wait',
+                        'bash -lc "asgard baldur repos --off vendor"', "asgard baldur keys 9f3c1a2b PROJ-9",
+                        "asgard baldur github token", "asgard baldur schedule --day MON",
+                        "git commit -m x && asgard baldur approve --date today",
+                        "asgard muninn restore --yes", "asgard muninn repair", "asgard-cli.exe muninn retention on",
+                        "asgard uninstall", "asgard uninstall --yes --purge", f"{shim} uninstall --yes",
+                        "asgard ysildir tools --on baldur_day", "asgard ysildir tools --off asgard_guide",
+                        "asgard ysildir setup --kiro .", rf'"{app}\asgard-cli.exe" ysildir setup --vscode-user'):
+            with self.subTest(command):
+                self.assertIsNotNone(self.guard.verdict(command))
+        for command in ("asgard baldur ai record --agent kiro --minutes 1h --commit abc1234 --confidence low "
+                        "--summary x", "asgard baldur report today", "asgard baldur ai list --json",
+                        "asgard baldur setup", "asgard baldur collect", "asgard muninn status", "asgard muninn check",
+                        "asgard version", "asgard --help", "asgard selftest", "asgard ysildir check",
+                        "asgard ysildir tools", "asgard odin status", "asgard heimdall fill --dry-run",
+                        'git commit -m "asgard baldur approve is the person\'s to run"'):
+            with self.subTest(command):
+                self.assertIsNone(self.guard.verdict(command))
+        event = {"tool": "shell", "tool_input": {"command": ["asgard", "baldur", "approve", "--date", "2026-10-01"]}}
+        self.assertTrue(any(self.guard.verdict(c) for c in self.guard.commands(event)), "an argv list")
+        self.assertEqual(run_hook("guard_baldur", "asgard baldur approve --date today").returncode, 2)
+
     def test_r6_commands_inside_quotes_bare_cli_py_and_files_are_blocked(self):
         """Review R6 (2026-10-09): each of these got past the guard, and one approved a day."""
         b = r'py -3 "C:\Users\me\AppData\Local\Asgard\app\apps\baldur\cli.py"'
@@ -906,10 +943,36 @@ class ReviewFindingsTests(AssistCase):
         self.assertFalse({"adjustments", "model", "tier", "prompt_version"} & set(note))
         self.assertEqual(note["earlier"]["model"], "gpt-4o", "the stale review is kept apart, not mixed in")
 
-    def test_r14_a_report_whose_commits_changed_isnt_counted(self):
+    def test_r14_a_reports_commits_cant_be_added_to_later(self):
+        """Muninn refuses it now (a trigger in 0004), rather than only noticing afterwards."""
+        p42, p51 = self.worked()
+        done = self.record(commits=p42, minutes=45)
+        with self.assertRaisesRegex(sqlite3.DatabaseError, "commits are recorded with it"):
+            self.con.execute("INSERT INTO agent_estimate_commits (estimate_id, sha) VALUES (?, ?)", (done.id, p51[0]))
+        self.assertTrue(self.suggest().changed())
+
+    def test_p7_a_report_cant_be_back_dated(self):
+        with self.assertRaisesRegex(sqlite3.DatabaseError, "set by Muninn"):
+            self.con.execute("INSERT INTO agent_estimates (recorded_at, agent, local_date, minutes, confidence, summary, "
+                             "report_hash) VALUES ('2026-01-01T00:00:00Z', 'kiro', '2026-10-01', 30, 'low', 's', 'h')")
+        p42, _ = self.worked()
+        self.assertEqual(self.record(commits=p42, minutes=45).status, "recorded")
+
+    def test_a_database_made_before_the_triggers_gets_them_from_repair(self):
+        for name in ("agent_estimate_commits_with_their_report", "agent_estimates_recorded_now"):
+            self.con.execute(f"DROP TRIGGER {name}")
+        drift = muninn.integrity.schema_drift(self.con)
+        self.assertIn(("trigger", "agent_estimates_recorded_now"), drift.missing)
+        done, failed = muninn.integrity.repair_schema(self.con)
+        self.assertEqual(failed, [])
+        self.assertEqual(len(done), 2, done)
+        self.assertFalse(muninn.integrity.schema_drift(self.con))
+
+    def test_r14_on_a_database_made_before_the_trigger_the_change_is_still_caught(self):
         p42, p51 = self.worked()
         done = self.record(commits=p42, minutes=45)
         self.assertTrue(self.suggest().changed())
+        self.con.execute("DROP TRIGGER agent_estimate_commits_with_their_report")   # as before Oct 10
         self.con.execute("INSERT INTO agent_estimate_commits (estimate_id, sha) VALUES (?, ?)", (done.id, p51[0]))
         found = self.suggest()
         self.assertFalse(found.changed())
@@ -920,6 +983,19 @@ class ReviewFindingsTests(AssistCase):
         rules.withdraw_agent_estimate(self.con, done.id)
         self.assertEqual([f for f in muninn.integrity.check(self.con).findings if f.area == "agents"], [],
                          "a withdrawn report counts for nothing, so there's nothing to fix")
+
+    def test_a_report_written_without_its_event_is_flagged(self):
+        """Review (Oct 10) finding 6: the event is what seals a report's commits, so a report written raw
+        without it could still be added to. Muninn's check names it."""
+        p42, _ = self.worked()
+        self.record(commits=p42, minutes=45)
+        self.assertEqual([f for f in muninn.integrity.check(self.con).findings if f.area == "agents"], [])
+        cols = [r[1] for r in self.con.execute("PRAGMA table_info(agent_estimates)")
+                if r[1] not in ("id", "report_hash", "recorded_at")]
+        raw = self.con.execute(f"INSERT INTO agent_estimates ({', '.join(cols)}, report_hash) SELECT {', '.join(cols)}, "
+                               "report_hash || 'x' FROM agent_estimates ORDER BY id LIMIT 1 RETURNING id").fetchone()[0]
+        problems = [f for f in muninn.integrity.check(self.con).findings if f.area == "agents"]
+        self.assertTrue(any(f"r{raw} weren't recorded through Baldur" in f.message for f in problems), problems)
 
     def test_r15_a_figure_changed_by_hand_stays_yours_whatever_you_change_it_to(self):
         p42, _ = self.worked()

@@ -30,7 +30,7 @@ from . import settings as config
 SCHEMA = (4, 5)     # 4: agent estimates, which the AI-assisted method reads and writes (v2, v3 and v5 need nothing)
 MAX_DAYS_BACK = 3650
 TASK_NAME = "Asgard Baldur collect"
-ENTRY = Path(__file__).resolve().parent.parent / "cli.py"
+ASGARD_COMMAND = paths.CODE_ROOT / "asgard" / "cli.py"     # asgard baldur ...: what the weekly task runs
 DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]+-[1-9][0-9]*$")
 
@@ -130,7 +130,8 @@ def cmd_setup(con: sqlite3.Connection, s: config.Settings, args: argparse.Namesp
                 con.execute("DELETE FROM identities WHERE kind = 'git_email' AND value = ?", (e,))
             dropped = collect.refresh_ownership(con, removed) if removed else 0
         if dropped:
-            print(f"{store.plural(dropped, 'commit')} no longer count as yours. Run cli.py estimate to update your days.")
+            print(f"{store.plural(dropped, 'commit')} no longer {'counts' if dropped == 1 else 'count'} as yours. "
+                  "Run cli.py estimate to update your days.")
 
     changes: Dict[str, object] = {}
     if args.project or args.remove_project:
@@ -199,7 +200,8 @@ def cmd_collect(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
             raise CliError(f"{p} isn't a git repository.")
     result = collect.collect(con, s, only=only, full=args.full)
     new = sum(r.commits_new for r in result.repos)
-    _log(f"collect: {len(result.repos)} repositories, {new} new commits"
+    _log(f"collect: {len(result.repos)} {'repository' if len(result.repos) == 1 else 'repositories'}, "
+         f"{store.plural(new, 'new commit')}"
          + "".join(f"; {r.name} failed: {r.error}" for r in result.failed))
     if not args.quiet:
         if not result.repos:
@@ -710,7 +712,7 @@ def cmd_github(con: sqlite3.Connection, s: config.Settings, args: argparse.Names
         res = github.sync(con, s, github_client(s))
         print(f"GitHub {host} as {res.login}: {res.repos} {'repository' if res.repos == 1 else 'repositories'}, "
               f"{res.pulls_changed} pull requests changed, {res.reviews_new} new reviews, "
-              f"{res.requested} reviews requested of you, {res.keyed_commits} commits keyed from pull requests "
+              f"{store.plural(res.requested, 'review')} requested of you, {res.keyed_commits} commits keyed from pull requests "
               f"({res.requests} requests, {res.unchanged} unchanged).")
         for problem in res.problems:
             print(f"  {problem}", file=sys.stderr)
@@ -737,9 +739,11 @@ def schedule_command(day: str, at: str, remove: bool = False, python: Optional[s
     exe = Path(python or sys.executable)
     quiet = exe.with_name("pythonw.exe")
     exe = quiet if quiet.exists() else exe
-    if python is None and paths.FROZEN:        # the packaged build: Asgard.exe runs cli.py, no console
-        exe = Path(paths.frozen_programs()[1])
-    action = f'"{exe}" "{ENTRY}" collect --quiet'
+    # The asgard command (asgard/cli.py): asgard baldur collect, with no console window.
+    if python is None and paths.FROZEN:        # the packaged build: Asgard.exe takes the command itself
+        action = f'"{paths.frozen_programs()[1]}" baldur collect --quiet'
+    else:
+        action = f'"{exe}" "{ASGARD_COMMAND}" baldur collect --quiet'
     if len(action) > 261:
         raise CliError("The scheduled command would be longer than Windows allows (261 characters).")
     # /IT: run only while you're signed in, so no password is stored and no admin rights are needed.

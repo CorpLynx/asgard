@@ -12,6 +12,7 @@ rem    odin-owa export          export only, keep the JSON, push nothing
 rem    odin-owa discover        print the calendar API requests OWA makes (diagnosis)
 rem    odin-owa check           verify config, token and Jira access
 rem    odin-owa status          last-run health, then recent sub-tasks
+rem    odin-owa settle [ID]     posts in doubt, and settling one (delegated)
 rem    odin-owa doctor          read-only environment report
 rem    odin-owa schedule        register the weekday scheduled task
 rem    odin-owa unschedule      remove the scheduled task
@@ -108,6 +109,7 @@ if /i "%ACTION%"=="report"     goto :delegate
 if /i "%ACTION%"=="status"     goto :delegate
 if /i "%ACTION%"=="doctor"     goto :delegate
 if /i "%ACTION%"=="forget"     goto :delegate
+if /i "%ACTION%"=="settle"     goto :delegate
 if /i "%ACTION%"=="set-token"  goto :delegate
 if /i "%ACTION%"=="init"       goto :delegate
 if /i "%ACTION%"=="csv"        goto :delegate
@@ -397,6 +399,7 @@ echo   odin-owa export          export only, keep the JSON
 echo   odin-owa discover        print the calendar API requests OWA makes
 echo   odin-owa check           verify config, token and Jira access
 echo   odin-owa status          last-run health, then recent sub-tasks
+echo   odin-owa settle [ID]     posts in doubt, and settling one
 echo   odin-owa doctor          read-only environment report
 echo   odin-owa schedule        register the weekday scheduled task
 echo   odin-owa unschedule      remove the scheduled task

@@ -465,6 +465,17 @@ def check(con: sqlite3.Connection, *, full: bool = True) -> CheckReport:
                        f"{' ...' if len(changed) > 5 else ''} cite commits they weren't recorded with, so Baldur "
                        "doesn't count them.",
                        f"Withdraw them (baldur.cmd ai withdraw {changed[0]}) and have the agent record them again.")
+        # Baldur writes a report's agent_estimate.recorded event with it, and the event is what seals its
+        # commits (the trigger agent_estimate_commits_with_their_report). One without it was written raw.
+        unsealed = [f"r{r[0]}" for r in con.execute(
+            "SELECT a.id FROM agent_estimates a WHERE a.status = 'recorded' AND NOT EXISTS (SELECT 1 FROM events e "
+            "WHERE e.entity_type = 'agent_estimates' AND e.entity_id = a.id AND e.kind = 'agent_estimate.recorded') "
+            "ORDER BY a.id")]
+        if unsealed:
+            report.add("warning", "agents", f"Agent estimates {', '.join(unsealed[:5])}"
+                       f"{' ...' if len(unsealed) > 5 else ''} weren't recorded through Baldur (they have no "
+                       "agent_estimate.recorded event), so nothing stops commits being added to them.",
+                       f"Withdraw them (baldur.cmd ai withdraw {unsealed[0]}) and have the agent record them again.")
     return report
 
 

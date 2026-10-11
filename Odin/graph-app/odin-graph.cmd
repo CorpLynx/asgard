@@ -14,6 +14,7 @@ rem    odin-graph check           verify config, token, permission, then Jira
 rem    odin-graph export          export only, keep the JSON, push nothing
 rem    odin-graph forget-graph    delete the cached Graph token
 rem    odin-graph status          last-run health, then recent sub-tasks
+rem    odin-graph settle [ID]     posts in doubt, and settling one (delegated)
 rem    odin-graph doctor          read-only environment report
 rem    odin-graph schedule        register the weekday scheduled task
 rem    odin-graph selftest        Graph tests plus the COM app's own tests
@@ -112,6 +113,7 @@ if /i "%ACTION%"=="report"        goto :delegate
 if /i "%ACTION%"=="status"        goto :delegate
 if /i "%ACTION%"=="doctor"        goto :delegate
 if /i "%ACTION%"=="forget"        goto :delegate
+if /i "%ACTION%"=="settle"        goto :delegate
 if /i "%ACTION%"=="set-token"     goto :delegate
 if /i "%ACTION%"=="csv"           goto :delegate
 if /i "%ACTION%"=="cli"           goto :delegate
@@ -444,6 +446,7 @@ echo   odin-graph check           verify Graph, then Jira
 echo   odin-graph export          export only, keep the JSON
 echo   odin-graph forget-graph    delete the cached Graph token
 echo   odin-graph status          last-run health, then recent sub-tasks
+echo   odin-graph settle [ID]     posts in doubt, and settling one
 echo   odin-graph doctor          read-only environment report
 echo   odin-graph schedule        register the weekday scheduled task
 echo   odin-graph selftest        Graph tests plus the COM app's tests

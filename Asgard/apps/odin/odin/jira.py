@@ -299,17 +299,27 @@ class JiraClient:
             tail = [_identity(i) for i in issues[-self.SEARCH_OVERLAP:]]
 
     def issue_worklogs(self, key: str) -> List[Dict[str, Any]]:
-        """Every worklog on one issue, oldest first. Each carries issueId, author, started and comment."""
+        """Every worklog on one issue, oldest first. Each carries issueId, author, started and comment.
+
+        An answer without a worklog list and its total (an empty body, {}, a proxy's stand-in) is a
+        JiraError, never an empty list: settling an interrupted post reads "no worklogs" as "it
+        didn't land" and offers the time again, so a non-answer must not look like one.
+        """
         out: List[Dict[str, Any]] = []
         seen = set()
         start = 0
         while True:
-            data = self.request("GET", f"/rest/api/2/issue/{quote(key)}/worklog?startAt={start}&maxResults=1000") or {}
-            page = [w for w in data.get("worklogs") or [] if isinstance(w, dict) and str(w.get("id")) not in seen]
+            path = f"/rest/api/2/issue/{quote(key)}/worklog?startAt={start}&maxResults=1000"
+            data = self.request("GET", path)
+            if not (isinstance(data, dict) and isinstance(data.get("worklogs"), list)
+                    and isinstance(data.get("total"), int) and not isinstance(data.get("total"), bool)):
+                raise JiraError(f"GET {path} answered without a list of worklogs, so Odin can't tell what "
+                                f"{key} holds; a proxy may be answering for Jira")
+            page = [w for w in data["worklogs"] if isinstance(w, dict) and str(w.get("id")) not in seen]
             seen.update(str(w.get("id")) for w in page)
             out.extend(page)
             start += len(page)
-            total = int(data.get("total") or 0)
+            total = data["total"]
             if not page or start >= total:      # an older Jira that ignores startAt sends nothing new
                 return out
 

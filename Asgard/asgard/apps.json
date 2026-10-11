@@ -59,7 +59,8 @@
       "description": "Lets approved AI tools use Asgard (MCP)",
       "monogram": "Ys",
       "color": "#5C6B1A",
-      "status": "coming_soon"
+      "status": "available",
+      "launch": {"type": "python", "target": "{app}/apps/ysildir/ysildir.pyw"}
     },
     {
       "id": "valkyrie",

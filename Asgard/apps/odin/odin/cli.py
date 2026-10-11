@@ -39,6 +39,7 @@ Commands
   post        steps 1-2, the key lookups and worklog sync, then 6 and 7; --dry-run to list
   status      the last run, then recent sub-tasks and what waits to be posted
   forget      drop a sub-task's record so its meeting can be pushed again
+  settle      the posts in doubt (sent, but Jira's answer never came), and settling one
   report      every meeting sub-task as a CSV, for Power BI or Excel (read-only)
 """
 from __future__ import annotations
@@ -50,13 +51,14 @@ import json
 import logging
 import logging.handlers
 import os
+import re
 import shutil
 import sqlite3
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 if sys.version_info < (3, 9):  # pragma: no cover
     sys.exit("Odin needs Python 3.9 or newer (3.11 or newer for Muninn on Windows).")
@@ -217,7 +219,7 @@ def _run(args: argparse.Namespace, command: str, meetings_wanted: bool, collect_
         raise
     try:
         if dry_run:
-            return _preview(cfg, con, work_dir, meetings, meetings_wanted, post_wanted)
+            return _preview(cfg, con, work_dir, meetings, meetings_wanted, post_wanted, window)
         with store.RunLock(work_dir):
             try:
                 _live(cfg, con, data_dir, work_dir, outcome, meetings, export_source, window, meetings_wanted,
@@ -262,7 +264,7 @@ def _live(cfg: Dict[str, Any], con: sqlite3.Connection, data_dir: Path, work_dir
             posting.retry_meetings(con, client, jira_sid, ctx,
                                    lambda run_, key, ctx_: collect.collect_issue(run_, key, ctx_, client), out.retries)
         out.push = run(meetings, cfg, con, client, data_dir=work_dir, event_ids=event_ids, ctx=ctx, me=me,
-                       seen_before=legacy.find if legacy else None)
+                       seen_before=legacy.find if legacy else None, window=window)
         out.push.worklogs_retried = len(out.retries.posted)
 
     # 5. Jira into Muninn. Posting needs the keys resolved and the worklogs current.
@@ -283,8 +285,12 @@ def _live(cfg: Dict[str, Any], con: sqlite3.Connection, data_dir: Path, work_dir
     #    worklogs are read again just before its time goes).
     if post_wanted and (out.command == "post" or settings["post_approved"]):
         if out.collected is not None and out.collected.worklogs_ok:
-            with muninn.Run(con, store.APP, jira_sid, "post-check") as check:
-                out.posts = posting.post_approved(con, client, int(settings["max_posts_per_run"]), run=check, ctx=ctx)
+            if not mo.posts_due(con):
+                out.posts = posting.PostResult()     # nothing due: no sync run, no row in Muninn
+            else:
+                with muninn.Run(con, store.APP, jira_sid, "post-check") as check:
+                    out.posts = posting.post_approved(con, client, int(settings["max_posts_per_run"]), run=check,
+                                                      ctx=ctx)
         elif out.collected is not None and out.collected.worklogs_left and not out.collected.problems:
             out.warnings.append("Approved Baldur days wait: the worklog sync is still catching up (it reads at most "
                                 f"{settings['max_issues_per_run']} issues a run), so Odin can't yet tell what Jira "
@@ -323,7 +329,7 @@ def _warn_token_expiry(client: JiraClient, j: Dict[str, Any]) -> None:
 
 
 def _preview(cfg: Dict[str, Any], con: sqlite3.Connection, work_dir: Path, meetings: list,
-             meetings_wanted: bool, post_wanted: bool) -> int:
+             meetings_wanted: bool, post_wanted: bool, window: Any = None) -> int:
     """A dry run: reads Muninn (and state.db, if it hasn't moved in yet), writes nothing anywhere."""
     legacy = history.Legacy.open(work_dir)
     if legacy is not None:
@@ -331,9 +337,11 @@ def _preview(cfg: Dict[str, Any], con: sqlite3.Connection, work_dir: Path, meeti
     errors = 0
     if meetings_wanted:
         result = run(meetings, cfg, con, None, data_dir=work_dir, dry_run=True,
-                     seen_before=legacy.find if legacy else None)
+                     seen_before=legacy.find if legacy else None, window=window)
         skipped = sum(result.skipped.values())
         log.info("\nWould create %d, already synced %d, skipped %d.", result.planned, result.existing, skipped)
+        if result.moved:
+            log.info("%d meeting(s) moved since their sub-task was made; nothing would change for them.", len(result.moved))
         for reason, count in result.skipped.most_common():
             log.debug("  skipped %3d  %s", count, reason)
         errors += len(result.errors)
@@ -349,6 +357,8 @@ def _summarize(out: Outcome) -> None:
         skipped = sum(r.skipped.values())
         log.info("\nCreated %d, already synced %d, skipped %d, errors %d, warnings %d.",
                  len(r.created), r.existing, skipped, len(r.errors), len(r.warnings))
+        if r.moved:
+            log.info("Moved since their sub-task was made, left as they are: %s", ", ".join(r.moved))
         if r.recovered:
             log.info("Recovered %d sub-task(s) that a failed create had already made: %s",
                      len(r.recovered), ", ".join(r.recovered))
@@ -393,6 +403,7 @@ def _finish(cfg: Dict[str, Any], data_dir: Path, out: Outcome) -> int:
         "created": len(r.created),
         "recovered": len(r.recovered),
         "existing": r.existing,
+        "moved": len(r.moved),
         "skipped": sum(r.skipped.values()),
         "errors": len(errors),
         "warnings": len(out.all_warnings()),
@@ -697,6 +708,9 @@ def _report_last_run(data_dir: Path) -> None:
     log.info("Last run (%s) %s at %s: created %s, existing %s, skipped %s, errors %s.",
              last.get("command", "push"), verdict, finished, last.get("created"), last.get("existing"),
              last.get("skipped"), last.get("errors"))
+    if last.get("moved"):
+        log.info("  %s meeting(s) moved since their sub-task was made; the sub-tasks were left as they are.",
+                 last["moved"])
     if last.get("first_error"):
         log.info("  first error: %s", last["first_error"])
     try:
@@ -747,7 +761,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     if waiting:
         log.info("Meeting worklogs to retry: %d", len(waiting))
     if stuck:
-        log.info("Posts waiting for an answer from Jira: %d (settled at the start of the next run)", len(stuck))
+        log.info("Posts in doubt: %d. Odin sent them but never heard whether Jira took them; each run asks "
+                 "Jira again.", len(stuck))
+        for s in stuck:
+            log.info("  %s   settle: odin settle %d", _in_doubt(s), s["worklog_id"])
     return 0
 
 
@@ -764,6 +781,166 @@ def cmd_forget(args: argparse.Namespace) -> int:
     log.info("Removed %d record(s) for %s. Its meeting is pushed again on the next run; time already logged "
              "for that meeting isn't logged a second time.", removed, args.issue_key)
     return 0
+
+
+_KINDS = {"baldur": "approved day", "meeting": "meeting", "manual": "time"}
+
+
+def _in_doubt(s: Dict[str, Any]) -> str:
+    """One post in doubt, for a person: what, where, when, and the marker to look for in Jira."""
+    start = muninn.from_ts(s["started_at"]).astimezone()
+    age = datetime.now(timezone.utc) - muninn.from_ts(s["sent_at"])
+    if age >= timedelta(days=2):
+        ago = f"{age.days} days ago"
+    elif age >= timedelta(hours=2):
+        ago = f"{int(age.total_seconds() // 3600)} hours ago"
+    else:
+        ago = f"{max(0, int(age.total_seconds() // 60))} min ago"
+    return (f"{s['worklog_id']:>5}  {s['key']:<12} {start:%Y-%m-%d %H:%M}  {posting._hm(s['seconds']):>6}  "
+            f"{_KINDS.get(s['origin'], s['origin']):<12} sent {ago:<12} {s['marker'] or '(no marker)'}")
+
+
+def cmd_settle(args: argparse.Namespace) -> int:
+    """List the posts in doubt, or settle one: by asking Jira again, or by what the person found."""
+    if args.worklog_id is None:
+        if args.posted or args.not_posted:
+            log.error("Say which post: odin settle ID --posted WORKLOG or odin settle ID --not-posted "
+                      "(odin settle lists them).")
+            return 2
+        con = store.open_muninn(readonly=True)
+        try:
+            stuck = mo.stuck_posts(con, older_than_seconds=0)
+        finally:
+            con.close()
+        if not stuck:
+            log.info("No posts in doubt.")
+            return 0
+        log.info("Posts in doubt: %d. Odin sent them but never heard whether Jira took them; each run asks Jira "
+                 "again.\n", len(stuck))
+        log.info("%5s  %-12s %-16s  %6s  %-12s %-17s %s", "ID", "issue", "start", "length", "kind", "sent", "marker")
+        for s in stuck:
+            log.info("%s", _in_doubt(s))
+        log.info("\nTo settle one:\n"
+                 "  odin settle ID                    ask Jira again\n"
+                 "  odin settle ID --posted WORKLOG   you found it in Jira: WORKLOG is that worklog's id\n"
+                 "  odin settle ID --not-posted       you checked Jira and it isn't there: its time is offered again\n"
+                 "In Jira, look for the marker in the issue's work log.")
+        return 0
+
+    if args.posted is not None and not re.fullmatch(r"[0-9]+", args.posted.strip()):
+        log.error("--posted takes the Jira worklog's id, a number (in Jira, the worklog's link ends with it).")
+        return 2
+    cfg = load_config(args.config)
+    with store.RunLock(default_data_dir()):      # never while a run might be settling or sending it
+        con = store.open_muninn()
+        try:
+            return _settle_one(cfg, con, args)
+        finally:
+            con.close()
+
+
+def _settle_one(cfg: Dict[str, Any], con: sqlite3.Connection, args: argparse.Namespace) -> int:
+    wid = args.worklog_id
+    found = {s["worklog_id"]: s for s in mo.stuck_posts(con, older_than_seconds=0)}.get(wid)
+    if found is None:
+        row = con.execute("SELECT state, jira_worklog_id FROM worklogs WHERE id = ?", (wid,)).fetchone()
+        if row is None:
+            log.error("Muninn has no worklog %d. odin settle lists the posts in doubt.", wid)
+        elif row["state"] == "posted":
+            log.error("Worklog %d isn't in doubt: it's posted, as Jira worklog %s.", wid, row["jira_worklog_id"])
+        else:
+            log.error("Worklog %d isn't in doubt: it's %s.", wid, row["state"])
+        return 2
+    s, key = found, found["key"]
+
+    if args.posted is not None:
+        jira_id = str(int(args.posted.strip()))         # Jira's ids carry no leading zeros
+        other = con.execute("SELECT o.id FROM worklogs o JOIN worklogs w ON w.work_item_id = o.work_item_id "
+                            "WHERE w.id = ? AND o.id <> w.id AND o.jira_worklog_id = ? AND o.origin <> 'jira'",
+                            (wid, jira_id)).fetchone()
+        if other is not None:
+            log.error("Jira worklog %s on %s is already recorded for another post (Muninn worklog %d). Check the "
+                      "id: this post's worklog carries the marker %s.", jira_id, key, other[0], s["marker"])
+            return 2
+        problem, note = _check_posted(cfg, key, jira_id, s)
+        if problem:
+            log.error("%s Nothing changed.", problem)
+            return 2
+        mo.resolve_stuck(con, wid, jira_id)
+        log.info("Recorded: worklog %d on %s is posted, as Jira worklog %s.%s", wid, key, jira_id,
+                 f" {note}" if note else "")
+        return 0
+    if args.not_posted:
+        mo.resolve_stuck(con, wid, None, searched=True)
+        if posting.offered_again(con, wid):
+            log.info("Recorded: worklog %d on %s is not in Jira, so its time is offered again on the next run. If "
+                     "it did reach Jira after all, it will be there twice: delete one in Jira.", wid, key)
+        else:
+            log.info("Recorded: worklog %d on %s is not in Jira. %s", wid, key, _not_sent_again(s))
+        return 0
+
+    if not s["marker"]:
+        log.error("Worklog %d has no marker to look for. Check %s's work log in Jira, then run odin settle %d "
+                  "--posted WORKLOG or --not-posted.", wid, key, wid)
+        return 1
+    token, _ = load_token(Path(cfg["data_dir"]))
+    client = JiraClient.from_config(cfg["jira"], token)
+    try:
+        landed = client.find_worklog(key, s["marker"])
+    except JiraError as exc:
+        log.error("Jira couldn't answer, so nothing changed: %s", exc)
+        if exc.status == 404:
+            log.error("  A 404 means %s was deleted, or you can't see it now. If it was deleted, its time can't "
+                      "be in Jira: odin settle %d --not-posted. If you lost access, get it back and run this "
+                      "again.", key, wid)
+        elif exc.status in (401, 403):
+            log.error("  Check your token (odin check) and that you can still see %s, then run this again.", key)
+        else:
+            log.error("  Try again later, or look in %s's work log for %s and settle it by hand "
+                      "(odin settle %d --posted WORKLOG or --not-posted).", key, s["marker"], wid)
+        return 1
+    if landed:
+        mo.resolve_stuck(con, wid, str(landed["id"]), searched=True)
+        log.info("Found in Jira: worklog %d on %s is posted, as Jira worklog %s.", wid, key, landed["id"])
+    else:
+        mo.resolve_stuck(con, wid, None, searched=True)
+        log.info("Not in %s's work log in Jira: worklog %d is recorded as not posted. %s", key, wid,
+                 "Its time is offered again on the next run." if posting.offered_again(con, wid)
+                 else _not_sent_again(s))
+    return 0
+
+
+def _not_sent_again(s: Dict[str, Any]) -> str:
+    """For a post recorded as not in Jira that no run will send again."""
+    start = muninn.from_ts(s["started_at"]).astimezone()
+    why = (f"Odin retries a meeting's time for {store.RETRY_DAYS} days after its sub-task was made, and this one "
+           "is older" if s["origin"] != "baldur" else "Baldur's day isn't due any more (it changed, or Jira holds it)")
+    return (f"No run will send it again: {why}. If the time belongs in Jira, log {posting._hm(s['seconds'])} on "
+            f"{s['key']} at {start:%Y-%m-%d %H:%M} by hand.")
+
+
+def _check_posted(cfg: Dict[str, Any], key: str, jira_id: str, s: Dict[str, Any]) -> Tuple[str, str]:
+    """(a reason to refuse, a note) for --posted WORKLOG: when Jira can answer, that worklog has to be on
+    the issue and be this post (its marker, or the same length when it was logged by hand). When Jira
+    can't, the person's word stands, and the note says it wasn't checked."""
+    try:
+        token, _ = load_token(Path(cfg["data_dir"]))
+        logs = JiraClient.from_config(cfg["jira"], token).issue_worklogs(key)
+    except (CredentialError, JiraError) as exc:
+        return "", f"Jira couldn't confirm it ({exc}), so it's recorded on your word."
+    found = next((w for w in logs if str(w.get("id")) == jira_id), None)
+    if found is None:
+        return (f"Jira has no worklog {jira_id} on {key}. Check the id: look in {key}'s work log for "
+                f"{s['marker'] or 'the time'}.", "")
+    comment = found.get("comment")
+    text = comment if isinstance(comment, str) else json.dumps(comment)
+    if s["marker"] and s["marker"] in (text or ""):
+        return "", ""
+    if int(found.get("timeSpentSeconds") or 0) == int(s["seconds"]):
+        return "", "It doesn't carry this post's marker, but it's the same length, so it's taken as this time."
+    return (f"Jira worklog {jira_id} on {key} is {posting._hm(int(found.get('timeSpentSeconds') or 0))} and doesn't "
+            f"carry this post's marker {s['marker']}, so it's another worklog; this post is "
+            f"{posting._hm(s['seconds'])}.", "")
 
 
 REPORT_SQL = (
@@ -871,6 +1048,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("forget", parents=[common], help="drop a sub-task's record so its meeting is pushed again")
     p.add_argument("issue_key")
     p.set_defaults(func=cmd_forget)
+
+    p = sub.add_parser("settle", parents=[common], help="list the posts in doubt, or settle one",
+                       description="Without an ID, list the posts Odin sent but never heard back about. With one, "
+                                   "ask Jira again by its marker, or record what you found in Jira yourself.")
+    p.add_argument("worklog_id", type=int, nargs="?", metavar="ID", help="the post's ID, from odin settle")
+    found = p.add_mutually_exclusive_group()
+    found.add_argument("--posted", metavar="WORKLOG", help="you found it in Jira: record it as posted with that "
+                                                           "Jira worklog id")
+    found.add_argument("--not-posted", action="store_true",
+                       help="you checked Jira and it isn't there: its time is offered again. If it did land, "
+                            "it would then be posted twice")
+    p.set_defaults(func=cmd_settle)
     return parser
 
 

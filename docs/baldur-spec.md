@@ -1,10 +1,11 @@
-<!-- Snapshot exported 2026-10-04 from the live Claude Doc: https://claude.ai/code/artifact/e8664f14-4d0c-417a-988c-d2ea23148df2
+<!-- Snapshot of the live Claude Doc: https://claude.ai/code/artifact/e8664f14-4d0c-417a-988c-d2ea23148df2
      The live doc is the source of truth; diagrams appear here only as placeholders.
-     Edited here on 2026-10-09 (branch claude/baldur-estimation), not yet in the live doc: "Two ways to
-     estimate", principle 5, the gitwork table's agent row, the Muninn section, Calibration (built),
-     "AI-assisted estimates" (replaces "Optional AI review"), the basis example, build order, tests and
-     open decisions; and the fixes from the independent review of 2026-10-09 (docs/review-2026-10-09.md)
-     in Calibration and AI-assisted estimates. Carry these over to the live doc. -->
+     Exported Oct 4; on Oct 11 the repo's edits since ("Two ways to estimate", Calibration, "AI-assisted
+     estimates", the Muninn section, settings, the basis, edge cases, build order, tests, open decisions) were
+     merged into the live doc, and the live doc's own edits since Oct 4 (which clone holds a repository's
+     name, and the tests line) into this file. They match, except that the live doc's byline is a date and
+     mention chip. -->
+
 
 # Baldur spec: work estimates from git, and pull request alerts
 
@@ -148,7 +149,7 @@ Baldur tells you when someone asks for your review, and when someone reviews you
 - **Alerts.** A Windows notification from Baldur's notification-area icon, raised through `Shell_NotifyIcon` from ctypes, so nothing is installed or registered. Clicking it opens the PR. Each request alerts once (`notified_at`), a re-request alerts again, drafts don't alert, and with `quiet_outside_tour` alerts wait for your tour of duty. If policy blocks notifications, the tile badge still works.
 - **Reviews of your PRs.** An approval or a request for changes alerts you once per review (`pr_reviews.notified_at`).
 - **The tile.** Asgard's launcher reads `v_tile_badges`, so Baldur's tile shows "2 reviews requested" even while Baldur is closed.
-- **Your GitHub is GitHub Enterprise Server** (decided 2026-10-04). `github_api` takes the server's address and stores `https://HOST/api/v3`; only remotes on that host count as GitHub repositories. The server leaves [rate limits off by default](https://docs.github.com/en/enterprise-server@3.17/rest/using-the-rest-api/rate-limits-for-the-rest-api), and conditional requests stay anyway. Its certificate chains to the agency CA, which Python reads from the Windows certificate stores; CERTIFICATE\_VERIFY\_FAILED while the browser works usually means the server isn't sending its intermediate certificate. An internal host usually bypasses the proxy, which suits `urllib`: it reads the Windows proxy settings but not PAC files.
+- **Your GitHub is GitHub Enterprise Server** (decided 2026-10-04). `github_api` takes the server's address, or a clone address, and stores `https://HOST/api/v3`. Only remotes on that host count as GitHub repositories, and each repository's owner/name goes to one clone (one whose folder exists, then the one already holding it, then the oldest), together with its pull requests. Muninn follows one GitHub at a time, so pointing `github_api` at another server clears the old one's pull requests. The server leaves [rate limits off by default](https://docs.github.com/en/enterprise-server@3.17/rest/using-the-rest-api/rate-limits-for-the-rest-api), and conditional requests stay anyway. Its certificate chains to the agency CA, which Python reads from the Windows certificate stores; CERTIFICATE\_VERIFY\_FAILED while the browser works usually means the server isn't sending its intermediate certificate. An internal host usually bypasses the proxy, which suits `urllib`: it reads the Windows proxy settings but not PAC files.
 - **Access.** A token in Credential Manager. First choice: a fine-grained token with read-only Pull requests (Metadata comes with it), on GHES 3.10 or later. On GHES such a token [reaches one organization and doesn't cover the enterprise's `internal` repositories](https://docs.github.com/en/enterprise-server@3.20/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens), and may need an owner's approval; if your pull requests span organizations, the fallback is a classic token with `repo` scope, which could write, though Baldur only reads. Without a token, Baldur works from local git and hides these features.
 - **In the day report.** Reviews you wrote show as visible work, not logged time (open decision).
 
@@ -465,7 +466,7 @@ Tests check the direction of bias, not just exact values. Proving a cap or round
 - **Agent estimates:** over randomised reports, an agent draft never raises a day or a ticket beyond what moves from another, and every figure rounds down. A report without commits is flagged, not counted, and a code-like summary is refused.
 - **Calibration:** only settings that estimate low on average may win; ties don't move a dial; days without commits or without a noted total are left out; a refused accept puts `baldur.json` back.
 - **Identity:** an empty identity list or empty `project_keys` refuses to run.
-- **Built:** `tests/test_baldur_calibrate.py` (16 tests) covers calibration. `tests/test_baldur_assist.py` (41) covers the AI-assisted method: intake, the check, agent drafts, stale packs, approvals with their review note, Odin's comment line, the CLI, and the Kiro guard and installer. `tests/test_baldur.py` has 115 tests, run against real temporary git repositories. It covers everything above except alerts, plus regressions from an independent review: stash entries, names as identities, broken settings, second clones and worktrees, range-independent dedupe, moved keys, malformed time zones, `pull --rebase`, `--since` cut-offs, CLI input limits and a strict Windows code page. It also covers GitHub Enterprise Server's remotes and squash merges, and squash copies that link sessions.
+- **Built:** `tests/test_baldur_calibrate.py` (16 tests) covers calibration. `tests/test_baldur_assist.py` (41) covers the AI-assisted method: intake, the check, agent drafts, stale packs, approvals with their review note, Odin's comment line, the CLI, and the Kiro guard and installer. `tests/test_baldur.py` has 115 tests, run against real temporary git repositories. It covers everything above except alerts, plus regressions from an independent review: stash entries, names as identities, broken settings, second clones and worktrees, range-independent dedupe, moved keys, malformed time zones, `pull --rebase`, `--since` cut-offs, CLI input limits and a strict Windows code page. It also covers GitHub Enterprise Server: remotes, squash merges, squash copies that link sessions, and which clone holds each repository's name and pull requests, checked by two review rounds and two fuzzers.
 
 ## Open decisions
 

@@ -144,8 +144,8 @@ class FrozenProcessTests(Home):
         from baldur import cli as baldur_cli
         with self.patched(ROOT):
             action = baldur_cli.schedule_command("MON", "09:00")[-1]
-        self.assertTrue(action.startswith(f'"{self.programs(ROOT)[1]}" '), action)
-        self.assertIn("cli.py", action)
+        self.assertEqual(action, f'"{self.programs(ROOT)[1]}" baldur collect --quiet',
+                         "Asgard.exe takes the asgard command itself (frozen_main.dispatches)")
 
     def test_ysildirs_client_entry_uses_the_console_program(self):
         if importlib.util.find_spec("pydantic") is None:
@@ -155,7 +155,7 @@ class FrozenProcessTests(Home):
         with self.patched(ROOT):
             command, args = clients.launch()
         self.assertEqual(command, self.programs(ROOT)[0])
-        self.assertEqual(args[-1], "serve")
+        self.assertEqual(args, ["ysildir", "serve"])
 
 
 class FrozenSetupTests(Home):

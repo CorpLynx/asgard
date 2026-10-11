@@ -39,3 +39,6 @@ terraform.rc
 
 # Asgard packaged build (Asgard/packaging/build.py): venv, PyInstaller work folder, dist and zips.
 Asgard/build/
+
+# Local ServiceNow scratch script; holds credentials, never commit
+Asgard/apps/heimdall/heimdall/snow_test.py

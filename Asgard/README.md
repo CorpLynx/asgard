@@ -211,18 +211,46 @@ heimdall.cmd fill -t "Monthly scan"
 - `init` creates the form file, `%LOCALAPPDATA%\Asgard\settings\heimdall.json`, from the example. Edit it once to match the security change form: `instance_url`, the catalog item's `catalog_sys_id` (the 32 characters after `sysparm_id=` or `sys_id=` in its address), and one entry per field with its label exactly as the form shows it and its `kind`: `text`, `select`, `reference` or `checkbox`. A field can also have `"required": true`, a `default`, or a `selector` when its label isn't enough to find it. `fields` shows what Heimdall read.
 - **Templates** are saved combinations of values for those fields. `template save NAME --set "LABEL=VALUE"` creates one; `template list`, `show`, `edit` (`--set`, `--unset`, `--attachment`, `--no-attachment`, `--rename`) and `delete` manage them. Names and labels ignore capitals. Checkboxes take `true` or `false`. Values may use `$today` (2026-10-04) or `$today_us` (10/04/2026); write `$$` for a dollar sign. In PowerShell, put such values in single quotes, or PowerShell replaces `$today` before Heimdall sees it.
 - `fill` uses, for each field, the form's default, then the template's value, then any `--set` you add for this run. A field with no value anywhere is left as it is. `--attachment` or `--no-attachment` changes the attachment for this run only, and `--dry-run` shows the plan without opening Edge.
+- **Variables** let a template ask for details each time it's used. Write `{NAME:FORMAT(...):"Friendly name"}` in a field's value; the friendly name is what people see, and the brackets and the friendly name are optional. `{NAME}` on its own repeats a variable defined elsewhere in the template, and `{{` or `}}` is a literal brace.
+
+  | Format | Asks for | Fills in |
+  | --- | --- | --- |
+  | `CHECKBOX("description")` | a checkbox, with the description beside it | `Yes` or `No` |
+  | `TEXTBOX('ip_v4', 'ip_v6', 'string', 'bool', 'int', 'float')` | typed text, checked against any one of the checks listed (none means any text) | the text as typed |
+  | `DROPDOWN('prod', 'test')` | one of the values listed | that value |
+  | `LIBRARY('ip_library_12')` | an entry from a library, searched by name or description | the entry's value, or its name (see below) |
+
+  ```
+  heimdall.cmd template save "Firewall access" --set "Short description=We need access to {SYSTEM_NAME:TEXTBOX('string'):'System Name'} from {SRC_ADDR:LIBRARY('ip_library_12'):'Source'} to {DEST_ADDR:LIBRARY('ip_library_12'):'Destination'}."
+  heimdall.cmd template show "Firewall access"
+  heimdall.cmd fill -t "Firewall access" --var "SYSTEM_NAME=Payroll" --var "SRC_ADDR=web-servers" --var "DEST_ADDR=db-servers"
+  ```
+
+  Every variable except a checkbox needs a value, and a fill stops naming every one that's missing. Values go into the form exactly as typed, so `$5` or `{x}` in a value is never misread. `ip_v4` and `ip_v6` take one address, not a range (`10.0.0.0/24` is refused). Templates saved before variables existed keep any braces they had as plain text.
+- **Libraries** are the lists `LIBRARY('name')` picks from, such as a firewall's address groups. Whoever looks after a list publishes it as a JSON file, and `library import FILE` keeps a copy; importing it again updates it. `library list`, `library show NAME --search TEXT` and `library remove NAME` manage them.
+
+  ```
+  {"library": "ip_library_12", "description": "Data centre address groups", "version": "2026-10-01",
+   "renders": "value",
+   "entries": [{"name": "web-servers", "value": "10.20.0.0/24", "description": "DMZ web tier"},
+               {"name": "db-servers", "value": ["10.30.0.5", "10.30.0.6"]}]}
+  ```
+
+  `entries` may also be an object of name to value, and a list value fills in as its items separated by `, `. With `"renders": "name"` a pick fills in the entry's name, and Heimdall doesn't keep the values at all. Use that for lists whose values people shouldn't see.
+
+  **What the encryption does.** Heimdall keeps each library in `%LOCALAPPDATA%\Asgard\heimdall\libraries`, encrypted with Windows DPAPI for your Windows account. That stops other accounts, other computers and backups from reading it. It does not stop you, or a program running as you, from decrypting it. Heimdall lists and searches entries by name and description only, and shows a value only for an entry someone picked, because that value is about to be typed into a form they review. A list whose values must stay hidden needs `"renders": "name"`. Delete the published file after importing it, since that copy isn't encrypted. Off Windows there's no DPAPI, so libraries are refused unless `HEIMDALL_UNPROTECTED_LIBRARIES=1` asks Heimdall to store them unencrypted, for trying it out. Windows ignores that setting.
 - **What a fill does.** Heimdall opens Edge with its own profile and signs in the normal way: pick your certificate and enter your PIN if Edge asks. After the first time, the profile usually keeps you signed in. It opens the catalog item, fills each field, checks that each value took, attaches the file, and brings Edge to the front. Review the form, click **Submit**, then close the window.
 - **What it never does.** It never clicks Submit, and it never reads, copies or stores your session, cookies or tokens; they stay in Heimdall's Edge profile.
 - **When it stops.** Heimdall stops with a message instead of guessing: a template that names a field the form no longer has, a required field with no value, a missing attachment, a label that matches no field or two fields, or a field that didn't keep its value. If two fields share a label, give one a `selector` in the form file.
 - **If the form won't open,** run `fill --trace` and open the trace with `playwright show-trace`. The trace holds your session and screenshots of the form; delete it afterwards and don't share it. Set `"ui": "portal"` in the form file to use the Service Portal page instead of the classic form.
 
-`fill` needs **Playwright for Python**, installed for the same Python that `heimdall.cmd` finds, and Edge's `RemoteDebuggingAllowed` policy must not be off (check `edge://policy`). Playwright runs a bundled `node.exe`, so if your computer only allows programs from approved folders, ask IT to install it in one. Every other command works without Playwright. `heimdall.cmd` finds Python the same way `baldur.cmd` does; if `.cmd` files are blocked, run `py -3 cli.py` from the same folder. Add `--json` to `fields`, `template list`, `template show` or `fill --dry-run` for output a program can read.
+`fill` needs **Playwright for Python**, installed for the same Python that `heimdall.cmd` finds, and Edge's `RemoteDebuggingAllowed` policy must not be off (check `edge://policy`). Playwright runs a bundled `node.exe`, so if your computer only allows programs from approved folders, ask IT to install it in one. Every other command works without Playwright. `heimdall.cmd` finds Python the same way `baldur.cmd` does; if `.cmd` files are blocked, run `py -3 cli.py` from the same folder. Add `--json` to `fields`, `template list`, `template show`, `library list`, `library show` or `fill --dry-run` for output a program can read.
 
 ## The shared window
 
 Heimdall's tile opens Asgard's shared window: a sidebar with **Dashboard**, the app's own pages and **Settings**. Every app that adds pages uses the same window, so they look and work alike. `py -3 -m asgard.ui` (run from `%LOCALAPPDATA%\Asgard\app`) opens one window with every app's pages.
 
-- **Heimdall's pages.** **Templates** lists your templates; pick one to see each field's value and where it comes from, then **Fill in Edge**, **Dry run**, **Edit** or **Delete**. **New template** shows every field on the form; leave a field empty to leave it as it is. A fill runs `heimdall fill` in the background and shows its progress; **Stop** ends it. **Form** shows what Heimdall read from the form file and can create it the first time.
+- **Heimdall's pages.** **Templates** lists your templates; pick one to see each field's value and where it comes from, then **Fill in Edge**, **Dry run**, **Edit** or **Delete**. A template with variables shows **This template asks for** above the buttons: a text box, a checkbox, a list to choose from, or a library search (type, then pick an entry) for each one. **New template** shows every field on the form; leave a field empty to leave it as it is. A fill runs `heimdall fill` in the background and shows its progress; **Stop** ends it. **Form** shows what Heimdall read from the form file and can create it the first time, and its **Libraries** card imports, lists and removes libraries.
 - **Dashboard** shows a card for each thing that needs you (templates that need fixing, a form not set up yet, Muninn's counts). Click one to go there.
 - **Settings** has Light, Dark or Match Windows, text size, and an accent colour for each app. Changes apply straight away. Text in an accent colour is adjusted if needed so it stays readable. Settings also lists each app's settings files with **Open** buttons.
 - **Keys.** Tab moves between controls, Enter or Space opens a sidebar page, Alt+Left goes back, F5 reloads the page.
@@ -318,7 +346,8 @@ Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, or **... > 
 | `%LOCALAPPDATA%\Asgard\settings\ysildir.json` | Which Ysildir tools your AI client may use (`ysildir.cmd tools`). No file means the defaults; a file Ysildir can't read leaves only `asgard_guide` on |
 | `%LOCALAPPDATA%\Asgard\settings\ui.json` | Your choices for the shared window: mode, text size, colours |
 | `%LOCALAPPDATA%\Asgard\settings\heimdall.json` | Heimdall's form file: the security change catalog item and its fields |
-| `%LOCALAPPDATA%\Asgard\settings\heimdall-templates.json` | Your Heimdall templates. Heimdall won't overwrite this file if it can't read it |
+| `%LOCALAPPDATA%\Asgard\settings\heimdall-templates.json` | Your Heimdall templates. Heimdall won't overwrite this file if it can't read it. It's version 2 since template variables; Heimdall reads version 1 and writes version 2 the next time you change a template, so an older Heimdall can't read it after that |
+| `%LOCALAPPDATA%\Asgard\heimdall\libraries` | The libraries Heimdall imported, one `.library` file each, encrypted with DPAPI for your Windows account |
 | `%LOCALAPPDATA%\Asgard\odin` | Odin's files: `config.json`, its DPAPI-protected Jira token, logs, calendar exports, `last_run.json`; its records are in Muninn. Odin moves its old `%LOCALAPPDATA%\meeting2jira` here the first time it runs, and keeps the old `state.db` as `state.db.migrated-DATE` for 30 days |
 | `%LOCALAPPDATA%\Asgard\heimdall\edge-profile` | The Edge profile Heimdall signs in with; delete it to sign out. Traces from `--trace` go in `heimdall\traces` |
 

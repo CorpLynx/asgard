@@ -17,6 +17,7 @@ Asgard is a per-user desktop tool set. It runs on the catalog's Python as the si
 | `logs\` | Errors and run summaries | Low; credentials are masked (below) |
 | Windows Credential Manager | GitHub token (Baldur); other service tokens as apps arrive | Secret |
 | `%LOCALAPPDATA%\Asgard\odin\` | Odin's own config, DPAPI-protected Jira token, state | Odin's existing review applies |
+| `%LOCALAPPDATA%\Asgard\heimdall\libraries\` | Heimdall's imported libraries (for example address groups and their IP ranges), encrypted with DPAPI for the user | Sensitive. DPAPI keeps them from other accounts, other machines and backups, but not from the user they belong to. Heimdall shows only names and descriptions, plus the value of an entry the user picks for a form. A library published with `"renders": "name"` has no values on the machine. The published JSON file is plain text and should be deleted after import |
 
 ## What leaves the machine
 

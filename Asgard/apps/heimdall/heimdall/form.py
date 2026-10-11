@@ -18,6 +18,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from asgard import paths
 
+from . import variables
+
 KINDS = ("text", "select", "reference", "checkbox")
 UIS = ("classic", "portal")
 PLACEHOLDERS = ("today", "today_us")
@@ -179,8 +181,18 @@ def coerce(field: Field, value: Any, context: str = "") -> Any:
     if isinstance(value, (dict, list)) or isinstance(value, bool):
         raise FormError(f"{prefix} takes text, not {value!r}.")
     text = str(value)
-    check_placeholders(text, f"{prefix}")
+    check_text(text, prefix)
     return text
+
+
+def check_text(text: str, where: str) -> None:
+    """Template variables must be readable, and $placeholders known, in the text's own words."""
+    try:
+        segments = variables.parse(text)
+    except variables.VariableError as exc:
+        raise FormError(f"{where}: {exc}") from None
+    for piece in variables.literals(segments):
+        check_placeholders(piece, where)
 
 
 def check_placeholders(text: str, where: str) -> None:

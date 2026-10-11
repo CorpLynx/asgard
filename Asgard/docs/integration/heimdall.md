@@ -29,8 +29,9 @@ Keep to your own `system` value: the guard is table-level, so the module (propos
 1. Open with `muninn.open_app("heimdall", supported=(3, 3))`; never migrate. If Heimdall needs columns, they come in an Asgard migration.
 2. Never hold a transaction while the browser works.
 3. `fields` holds the same sensitive detail as security change itself: same handling as its exports; never in events (put the id and state in payloads, not field values).
-4. Templates and browser profiles stay in Heimdall's own folders (`settings\heimdall\`, the Edge profile); they are not Muninn data. Valhalla must list the Edge profile folder in its purge set (open item from the inventory).
+4. Templates, libraries and browser profiles stay in Heimdall's own folders (`settings\heimdall-templates.json`, `heimdall\libraries\`, the Edge profile); they are not Muninn data. Valhalla must list the Edge profile and libraries folders in its purge set (open item from the inventory).
 5. Playwright is allowed under the dependency policy (declared and pinned), but stays out of `asgard.muninn`: only the `fill` command imports it, as today.
+6. Template variables (`heimdall/variables.py`) and libraries (`heimdall/library.py`) import nothing from Heimdall apart from `asgard.dpapi`, `asgard.paths` and `asgard.jsonfile`, so the on-prem copy can lift them whole. `templates.plan()` is the one place they're resolved, and both the browser fill and a ServiceNow API fill should take values from its `Plan`. A library's values live only in its encrypted file and in the `Plan` of a fill that picked them. Like `fields`, they never go into events or Muninn.
 
 ## Tests the contract needs
 

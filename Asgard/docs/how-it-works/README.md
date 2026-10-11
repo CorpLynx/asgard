@@ -6,8 +6,8 @@ These pages explain how the three fit together and why they're built the way the
 
 | Page | What it explains | The contract it builds on |
 | --- | --- | --- |
-| [muninn.md](muninn.md) | The shared database: who may write what, how a write is made, runs, events, upgrades and backups | [muninn-design.md](../muninn-design.md), [muninn-operations.md](../muninn-operations.md) |
-| [baldur.md](baldur.md) | From git to an approved figure: collecting, estimating, reviewing, approving, and the AI-assisted method | [baldur-spec.md](../baldur-spec.md), [integration/baldur.md](../integration/baldur.md) |
+| [muninn.md](muninn.md) | The shared database: who may write what, how a write is made, runs, events, upgrades and backups | [muninn-design.md](../../../docs/muninn-design.md), [muninn-operations.md](../../../docs/muninn-operations.md) |
+| [baldur.md](baldur.md) | From git to an approved figure: collecting, estimating, reviewing, approving, and the AI-assisted method | [baldur-spec.md](../../../docs/baldur-spec.md), [integration/baldur.md](../integration/baldur.md) |
 | [ysildir.md](ysildir.md) | How an AI client uses Asgard through MCP without being able to decide anything | [integration/ysildir.md](../integration/ysildir.md) |
 
 ## The three in one paragraph

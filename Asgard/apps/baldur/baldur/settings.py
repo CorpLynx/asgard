@@ -11,14 +11,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import os
-import tempfile
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from asgard import paths
+from asgard import jsonfile, paths
 
 POLICIES = ("ambient", "overlap", "independent")
 REVIEW_MODES = ("off", "metadata", "content")
@@ -267,20 +265,9 @@ def save(values: Dict[str, Any], path: Optional[Path] = None) -> Path:
     path = path or settings_path()
     data = {"_help": "Baldur's settings. See the Baldur spec for what each one does."}
     data.update(validate(values))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Its own temporary file, not a fixed name: the window reads settings from more than one thread,
-    # and two writers sharing "baldur.json.tmp" would have one rename a file the other already took.
-    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
-    tmp = Path(name)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
-            json.dump(data, fh, indent=2)
-            fh.write("\n")
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-    return path
+    # asgard.jsonfile: its own temporary file, and a rename that waits out Windows holding the
+    # target open. The window writes settings from one thread while another reads them.
+    return jsonfile.write_json(path, data)
 
 
 def update(changes: Dict[str, Any], path: Optional[Path] = None) -> Settings:

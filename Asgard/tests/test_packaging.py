@@ -164,7 +164,10 @@ class FrozenSetupTests(Home):
     def fake_build(self) -> Path:
         """A packaged build's folder: its programs, a DLL, the payload and a checked-hash .pyc."""
         build = self.dir / "Downloads" / "Asgard"
-        ext = ".exe" if os.name == "nt" else ""
+        # Always ".exe": this is a Windows build regardless of the host running the test. Without
+        # it, a file named "Asgard" and the folder "asgard/" collide on a case-insensitive disk
+        # (macOS, Windows), since the only other caller of fake_build() always passes os.name=="nt".
+        ext = ".exe"
         for rel in ("Asgard.pyw", "VERSION", f"Asgard{ext}", f"asgard-cli{ext}", "python312.dll",
                     "asgard/launcher.py", "asgard/asgard.ico", "asgard/__pycache__/launcher.cpython-312.pyc",
                     "apps/baldur/cli.py", "payload.sha256"):

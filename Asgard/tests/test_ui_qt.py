@@ -169,6 +169,43 @@ class WindowTests(unittest.TestCase):
         s = self.open(app="odin")
         self.visit_all(s)
 
+    def baldur_worked_example(self):
+        """test_baldur's worked example (PROJ-42 1h30m, PROJ-51 30m on 1 Oct 2026), with its settings file."""
+        sys.path.insert(0, str(ROOT / "tests"))
+        import test_baldur as tb
+        case = tb.MuninnCase()
+        case.setUp()                       # its own folder, and ASGARD_HOME pointed at it until tearDown
+        self.addCleanup(case.doCleanups)
+        case.worked_example()
+        path = case.dir / "settings" / "baldur.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"project_keys": ["PROJ", "OPS"], "history_days": 3650}), encoding="utf-8")
+        return case, tb.DAY.isoformat()
+
+    def test_baldur_day_with_tickets_loads_cleanly_and_shows_a_typed_figure(self):
+        """The figure fields, the dialogs and the This week button only exist with rows and a past week."""
+        case, day = self.baldur_worked_example()
+        s = self.open(app="baldur")
+        backend = s.navigation.bridgeFor("baldur").backend()
+        backend.choose_day(day)
+        self.assertTrue(s.navigation.go("baldur:day"))
+        pump()
+
+        def tickets():
+            value = self.page_value(s, "tickets")       # a QJSValue when empty, a list otherwise
+            return value.toVariant() if hasattr(value, "toVariant") else value
+
+        self.assertEqual([t["edit"] for t in tickets()], ["stage", "stage"])
+        backend.stage_figure(day, "PROJ-42", "1h45m")
+        QMetaObject.invokeMethod(s.engine.rootObjects()[0], "pageCall", Q_ARG("QVariant", "reload"))
+        pump()
+        self.assertEqual([t["staged_text"] for t in tickets()], ["1h45m", ""])
+        self.assertTrue(s.navigation.go("baldur:week"))
+        pump()
+        self.assertTrue(self.page_ready(s))
+        self.assertEqual(s.qml_warnings, [])
+        del case
+
     def test_heimdall_pages_load_cleanly_with_a_form_and_templates(self):
         self.write_form()
         from heimdall.ui_backend import Backend

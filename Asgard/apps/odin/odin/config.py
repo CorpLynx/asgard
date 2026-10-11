@@ -29,11 +29,11 @@ from __future__ import annotations
 import copy
 import json
 import os
-import tempfile
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from asgard import jsonfile
 from asgard import paths as asgard_paths
 
 # The key rule Muninn enforces on every key column: a number that doesn't start with 0.
@@ -331,19 +331,7 @@ def set_values(changes: Dict[str, Any], path: Optional[Path] = None) -> Dict[str
             here = nested
         here[parts[-1]] = value
     cfg = build_config(updated)              # raises ConfigError before anything is written
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Its own temporary file, so two writers (the window reads settings from more than one thread)
-    # can't have one rename a file the other already took.
-    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
-    tmp = Path(name)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
-            json.dump(updated, fh, indent=2)
-            fh.write("\n")
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
+    jsonfile.write_json(path, updated)      # its own temp file, and a rename Windows can't refuse
     cfg["data_dir"] = str(path.parent)
     return cfg
 

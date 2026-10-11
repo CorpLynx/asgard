@@ -1,6 +1,9 @@
 // Baldur: a week of estimated development time, and the reviews waiting on you. Reading only, except
 // Read git and Estimate, which both go off the window's thread. Approving is on the day page, where you
 // can see what you would be approving.
+//
+// GitHub is checked every poll_minutes while this page is open, off the window's thread, and quietly:
+// the page says how fresh the list is, and GitHub being out of reach never stops anything else.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -16,6 +19,8 @@ ScrollPage {
     property string monday: ""
     property string pending: ""
     readonly property bool busy: pending !== ""
+    property string githubPending: ""
+    property var github: ({})          // the last sync_github reply: state, at, message
 
     readonly property int toReview: {
         var n = 0
@@ -54,6 +59,39 @@ ScrollPage {
         bridge.callAsync(pending, method, args)
     }
 
+    function step(weeks) {
+        if (busy || (weeks > 0 && week.is_this_week))
+            return
+        monday = weeks < 0 ? week.previous : week.next
+        reload()
+    }
+
+    function thisWeek() {
+        monday = ""
+        reload()
+    }
+
+    function checkGitHub() {
+        if (!bridge || githubPending !== "")
+            return
+        githubPending = "github:" + Date.now()
+        bridge.callAsync(githubPending, "sync_github", [])
+    }
+
+    readonly property string githubText: {
+        if (page.week.github !== true)
+            return "GitHub is off"
+        if (page.githubPending !== "" && !page.github.at)
+            return "Checking GitHub..."
+        if (!page.github.state)
+            return "Pull requests, from GitHub"
+        if (page.github.state === "fresh")
+            return "Checked at " + page.github.at
+                   + (page.github.problems && page.github.problems.length
+                      ? ", " + page.github.problems.length + " repo(s) unreadable" : "")
+        return page.github.message
+    }
+
     function openDay(date) {
         bridge.call("choose_day", [date])
         navigation.go("baldur:day")
@@ -65,6 +103,14 @@ ScrollPage {
         target: page.bridge
         ignoreUnknownSignals: true
         function onAsyncDone(token, reply) {
+            if (token === page.githubPending) {
+                // Quiet on purpose: a failure shows beside the list, never as a toast.
+                page.githubPending = ""
+                page.github = reply.error ? { "state": "failed", "message": reply.error } : reply
+                var asked = page.bridge.call("reviews", [])
+                page.reviews = asked.error ? page.reviews : (asked.value || [])
+                return
+            }
             if (token !== page.pending)
                 return
             page.pending = ""
@@ -77,6 +123,25 @@ ScrollPage {
             }
             page.reload()
         }
+    }
+
+    // Every poll_minutes while the page is open; it goes when the page does, so nothing runs behind it.
+    Timer {
+        id: githubTimer
+        interval: Math.max(1, page.github.poll_minutes || page.week.poll_minutes || 5) * 60000
+        repeat: true
+        triggeredOnStart: true
+        running: page.bridge !== null && page.week.github === true && page.visible
+        onTriggered: page.checkGitHub()
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+Left"]
+        onActivated: page.step(-1)
+    }
+    Shortcut {
+        sequences: ["Ctrl+Right"]
+        onActivated: page.step(1)
     }
 
     PageHeader {
@@ -144,7 +209,7 @@ ScrollPage {
             Layout.fillWidth: true
             label: "Reviews asked of you"
             value: String(page.reviews.filter(function (r) { return r.kind === "requested" }).length)
-            detail: "Pull requests, from GitHub"
+            detail: page.githubText
             interactive: false
         }
     }
@@ -157,13 +222,22 @@ ScrollPage {
             text: "Previous week"
             kind: "ghost"
             enabled: !page.busy
-            onClicked: { page.monday = page.week.previous; page.reload() }
+            onClicked: page.step(-1)
+            Accessible.description: "Ctrl+Left"
+        }
+        AppButton {
+            text: "This week"
+            kind: "ghost"
+            visible: page.week.is_this_week === false
+            enabled: !page.busy
+            onClicked: page.thisWeek()
         }
         AppButton {
             text: "Next week"
             kind: "ghost"
             enabled: !page.busy && !page.week.is_this_week
-            onClicked: { page.monday = page.week.next; page.reload() }
+            onClicked: page.step(1)
+            Accessible.description: "Ctrl+Right"
         }
         Item { Layout.fillWidth: true }
         Pill {

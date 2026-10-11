@@ -14,15 +14,13 @@ blocks it.
 Python 3.9 syntax, but no `from __future__ import annotations`: pydantic reads the annotations.
 """
 import json
-import os
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError
 
-from asgard import paths
+from asgard import jsonfile, paths
 
 from . import Refused
 from .switches import ALWAYS_ON, HELP, NAMES, SWITCHES, VERSION, Switch  # noqa: F401 (re-exported)
@@ -99,17 +97,7 @@ def save(tools: Dict[str, bool], path: Optional[Path] = None) -> Path:
     path = path or settings_path()
     data = {"_help": HELP, "version": VERSION, "tools": {n: bool(tools.get(n, d)) for n, d in defaults().items()}}
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle, name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
-    tmp = Path(name)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\r\n" if os.name == "nt" else "\n") as fh:
-            json.dump(data, fh, indent=2)
-            fh.write("\n")
-        os.replace(tmp, path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
-    return path
+    return jsonfile.write_json(path, data)
 
 
 def switch(names: Iterable[str], on: bool, path: Optional[Path] = None) -> Config:

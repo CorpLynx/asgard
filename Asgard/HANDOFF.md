@@ -1,5 +1,8 @@
 # Asgard handoff (2026-10-10, Asgard 0.4.0 in progress, not shipped)
 
+## Latest (2026-10-11): how Baldur, Ysildir and Muninn work
+The owner asked for documentation of how the three work. [docs/how-it-works/](docs/how-it-works/README.md) explains the mechanics the contracts and specs assume: one day's work end to end, Muninn's guard, transactions, runs, views and events, Baldur's collect-estimate-approve pipeline and the AI-assisted method, and how Ysildir lets an agent report and ask without deciding anything. It's an explainer: where it and a contract disagree, the contract wins. The README links it.
+
 ## Latest (2026-10-11): the Windows build caught two things the Mac can't
 Run 38097560592 (`Package Asgard`, commit c5ead53) failed: 1 failure and 6 errors, all from the window work, none visible on macOS.
 

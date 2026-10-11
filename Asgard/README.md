@@ -7,6 +7,8 @@ There are two ways to install it. Both hold the same apps, keep your data in `%L
 - **With Python** (below): the zip of the code, on your agency's Python. It needs no programs approved, so it's the default.
 - **The packaged build** (programs made with PyInstaller): it needs no Python, but IT has to allow its programs. See [Install the packaged build](#install-the-packaged-build).
 
+How Baldur, Ysildir and Muninn work, from your git history to an approved figure in Jira: [docs/how-it-works/](docs/how-it-works/README.md).
+
 ## Install
 
 1. Download the zip: **Code > Download ZIP** on the GitHub page, or the **Source code (zip)** of a release.

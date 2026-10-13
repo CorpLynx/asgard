@@ -144,7 +144,7 @@ def _check_mcp() -> str:
 
 def _check_apps() -> str:
     root = bundle_root()
-    for name in ("asgard.launcher", "asgard.install", "asgard.valhalla", "baldur.cli", "baldur.window",
+    for name in ("asgard.launcher", "asgard.install", "asgard.valhalla", "baldur.cli", "baldur.ui_backend",
                  "heimdall.cli", "odin.cli", "odin.ui_backend", "ysildir.config"):
         module = importlib.import_module(name)
         where = Path(getattr(module, "__file__", "") or "")

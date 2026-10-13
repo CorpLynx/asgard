@@ -206,6 +206,7 @@ class Backend:
     # ---------------------------------------------------------------- for the shell
 
     def dashboard(self) -> List[Dict[str, Any]]:
+        """Two sides, kept apart: making templates (Templates), and submitting one (Submit a change)."""
         state = self.state()
         if state["form_error"]:
             return [{"label": "Form", "value": "Set up" if state["form_missing"] else "Fix",
@@ -214,15 +215,17 @@ class Backend:
         if state["templates_error"]:
             return [{"label": "Templates", "value": "Fix", "detail": "The templates file has a problem",
                      "tone": "error", "view": "templates"}]
-        broken = sum(1 for t in state["templates"] if t["problems"])
-        cards = [{"label": "Templates", "value": str(len(state["templates"])),
-                  "detail": "Ready to fill" if state["templates"] else "Save one to get started", "view": "templates"},
-                 {"label": "Form fields", "value": str(state["form"]["field_count"]),
-                  "detail": state["form"]["instance_url"], "view": "form"}]
+        total = len(state["templates"])
+        ready = sum(1 for t in state["templates"] if not t["problems"])
+        broken = total - ready
+        cards = [{"label": "Templates available", "value": str(total),
+                  "detail": "Make and edit them here" if total else "Make one to get started", "view": "templates"},
+                 {"label": "Ready to submit", "value": str(ready),
+                  "detail": "Fill one into ServiceNow" if ready else "None ready yet", "view": "submit"}]
         if broken:
-            cards.insert(1, {"label": "Need fixing", "value": str(broken),
-                             "detail": "Templates that no longer match the form", "tone": "warning",
-                             "view": "templates"})
+            cards.append({"label": "Need fixing", "value": str(broken),
+                          "detail": "Templates that no longer match the form", "tone": "warning",
+                          "view": "templates"})
         return cards
 
     def settings_files(self) -> List[Dict[str, str]]:

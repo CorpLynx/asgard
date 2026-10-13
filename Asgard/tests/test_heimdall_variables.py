@@ -491,7 +491,9 @@ class BackendTests(LibraryCase):
         row = self.b.state()["templates"][0]
         self.assertEqual(row["variables"], 0)
         self.assertIn("isn't on this computer", row["problems"][0])
-        self.assertEqual(self.b.dashboard()[1]["label"], "Need fixing")
+        labels = [c["label"] for c in self.b.dashboard()]
+        self.assertIn("Need fixing", labels)
+        self.assertEqual([c["value"] for c in self.b.dashboard() if c["label"] == "Ready to submit"], ["0"])
 
     def test_a_computer_that_cant_keep_libraries_says_so(self):
         with mock.patch("heimdall.library.default_protector", return_value=None):

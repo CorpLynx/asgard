@@ -9,6 +9,7 @@
   },
   "backend": "heimdall.ui_backend:Backend",
   "views": [
+    {"id": "submit", "title": "Submit a change", "icon": "Su", "qml": "Submit.qml"},
     {"id": "templates", "title": "Templates", "icon": "Tp", "qml": "Templates.qml"},
     {"id": "form", "title": "Form", "icon": "Fm", "qml": "Form.qml"}
   ]

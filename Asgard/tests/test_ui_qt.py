@@ -249,7 +249,8 @@ class WindowTests(unittest.TestCase):
                                  " {URG:CHECKBOX(\"Emergency change\"):'Urgent'} in {ENV:DROPDOWN('prod','test')}"}})
         s = self.open(app="heimdall")
         self.visit_all(s)
-        s.navigation.go("heimdall:templates")
+        # The fill-in inputs live on the Submit page now; Templates only makes and edits.
+        s.navigation.go("heimdall:submit")
         pump()
         self.assertEqual(self.page_value(s, "selected"), "Access")
         values = self.page_value(s, "asksList")

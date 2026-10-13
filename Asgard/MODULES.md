@@ -74,7 +74,7 @@ Reviewed 2026-10-09 against "the best module for each job". Muninn, Baldur and B
 | The command line | `click`, `typer` | `argparse` | `apps/baldur/baldur/cli.py` | Enough for the commands, with ASCII output and nothing to install |
 | A chat's JSON reply | `json-repair` | `muninn.baldur.parse_reply`, which strips code fences and refuses anything that isn't JSON | `asgard/muninn/baldur.py` | Muninn stays standard library. A refused reply only means asking the chat again, but a repaired one can quietly change what it says: a cut-off list of adjustments becomes a shorter valid one |
 | The agent hooks | — | `json`, `re` and `shlex` | `apps/baldur/agents/hooks/` | They run under whatever Python the agent (Kiro) starts, outside Asgard's install, so they can't count on any package |
-| Baldur's window | `PySide6-Essentials` (pinned and approved) | `tkinter` | `apps/baldur/ui/*.qml` over `baldur/ui_backend.py`; `baldur/window.py` is the older tkinter one | The Qt pages do everything the tkinter window does as of Oct 11. `window.py` is kept only as a fallback until the Qt day page has been driven on the workstation, then deleted (`docs/handoff-baldur-qt-parity.md`) |
+| Baldur's window | `PySide6-Essentials` (pinned and approved) | `tkinter` (the launcher's fallback only) | `apps/baldur/ui/*.qml` over `baldur/ui_backend.py` | Baldur's tile opens the shared Qt window, like the other apps. The old tkinter window (`baldur/window.py`) was removed on Oct 11 once the Qt pages carried every ability it had |
 
 ## Planned (not pinned yet)
 

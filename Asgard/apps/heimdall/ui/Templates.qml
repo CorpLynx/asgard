@@ -1,4 +1,6 @@
-// Heimdall: saved templates. Pick one, check its values, then Fill in Edge (it stops before Submit).
+// Heimdall: making and editing templates. A template is a saved set of values for the security
+// change form, with the fill-in-the-blanks variables a submitter completes. Using one to submit is
+// the Submit a change page; this page only makes and edits them, so the two stay apart.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -12,23 +14,9 @@ Item {
     property var detail: null
     property bool editing: false
     property bool creating: false
-    property var output: []
-    property string runState: ""        // "", "plan", "running", "done", "failed"
 
     readonly property bool ready: !!st.form && !st.templates_error
     readonly property var templates: st.templates || []
-    readonly property var asksList: detail && detail.variables ? detail.variables : []
-
-    // What the "This template asks for" inputs hold: {NAME: text or bool}.
-    function varValues() {
-        var out = {}
-        for (var i = 0; i < askRepeater.count; i++) {
-            var item = askRepeater.itemAt(i)
-            if (item)
-                out[item.modelData.name] = item.value()
-        }
-        return out
-    }
 
     function call(method, args) {
         if (!bridge)
@@ -53,8 +41,6 @@ Item {
     function select(name) {
         selected = name
         editing = false
-        output = []
-        runState = ""
         loadDetail()
     }
     function startNew() {
@@ -67,32 +53,8 @@ Item {
         editing = true
         editor.load(detail)
     }
-    function dryRun() {
-        var r = call("dry_run", [selected, varValues()])
-        if (r) {
-            output = r.lines
-            runState = "plan"
-        }
-    }
-    function fill() {
-        output = ["Starting Edge. If it asks, pick your certificate and enter your PIN."]
-        runState = "running"
-        if (!bridge.spawn("fill_command", [selected, varValues()]))
-            runState = ""
-    }
 
     onBridgeChanged: reload()
-
-    Connections {
-        target: page.bridge
-        ignoreUnknownSignals: true
-        function onOutput(line) { page.output = page.output.concat([line.replace(/^heimdall: /i, "")]) }
-        function onFinished(code) {
-            page.runState = code === 0 ? "done" : "failed"
-            if (code !== 0)
-                shell.toast("The fill stopped early. The messages below say why.", "error")
-        }
-    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -102,8 +64,14 @@ Item {
         PageHeader {
             Layout.fillWidth: true
             title: "Templates"
-            subtitle: "Saved values for the security change form. Fill opens Edge, fills the form, and stops so you can "
-                      + "review it and click Submit yourself."
+            subtitle: "Saved values for the security change form, with the details a submitter fills in. "
+                      + "Submit one on the Submit a change page."
+            AppButton {
+                text: "Submit a change"
+                kind: "ghost"
+                enabled: !page.editing
+                onClicked: navigation.go("heimdall:submit")
+            }
             AppButton {
                 text: "New template"
                 kind: "primary"
@@ -197,7 +165,7 @@ Item {
                 }
             }
 
-            // ------------------------------------------------ one template
+            // ------------------------------------------------ one template (read-only view)
             Card {
                 visible: !page.editing
                 Layout.fillWidth: true
@@ -209,9 +177,9 @@ Item {
                     visible: !page.detail
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    title: page.templates.length ? "Pick a template" : "Save your first template"
-                    detail: "A template holds the values you use for one kind of submission. The form's fields come "
-                            + "from the form file."
+                    title: page.templates.length ? "Pick a template" : "Make your first template"
+                    detail: "A template holds the values you use for one kind of submission, and names what a "
+                            + "submitter fills in. The form's fields come from the form file."
                     actionText: page.templates.length ? "" : "New template"
                     onAction: page.startNew()
                 }
@@ -262,115 +230,16 @@ Item {
                     }
                 }
 
-                // ---- the template's variables: what a person fills in before Fill
-                ColumnLayout {
-                    visible: page.asksList.length > 0
+                // What a submitter will be asked for, named here so a template author can see it.
+                Text {
+                    visible: !!page.detail && (page.detail.variables || []).length > 0
+                    text: "Asks the submitter for: "
+                          + (page.detail ? (page.detail.variables || []).map(function (v) { return v.label }).join(", ") : "")
+                    color: theme.textMuted
+                    font.family: theme.fontFamily
+                    font.pixelSize: theme.fontSize - 1
+                    wrapMode: Text.WordWrap
                     Layout.fillWidth: true
-                    spacing: 8
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: theme.borderSoft
-                    }
-                    Text {
-                        text: "This template asks for"
-                        color: theme.text
-                        font.family: theme.fontFamily
-                        font.pixelSize: theme.fontSize
-                        font.weight: Font.DemiBold
-                    }
-
-                    Repeater {
-                        id: askRepeater
-                        model: page.asksList
-                        delegate: ColumnLayout {
-                            id: ask
-                            required property var modelData
-                            readonly property string kind: modelData.kind
-                            property var results: []
-                            property int total: 0
-                            property bool showing: false
-                            Layout.fillWidth: true
-                            spacing: 4
-
-                            function value() {
-                                if (kind === "checkbox")
-                                    return check.checked
-                                if (kind === "dropdown")
-                                    return drop.currentIndex > 0 ? drop.currentText : ""
-                                return entry.text.trim()
-                            }
-                            function search() {
-                                var r = page.call("library_search", [modelData.library, entry.text, 8])
-                                results = r ? r.entries : []
-                                total = r ? r.total : 0
-                                showing = true
-                            }
-                            function pick(name) {
-                                entry.text = name
-                                showing = false
-                            }
-
-                            Label {
-                                visible: ask.kind !== "checkbox"
-                                text: ask.modelData.label + (ask.modelData.required ? " *" : "")
-                                font.weight: Font.DemiBold
-                            }
-                            TextField {
-                                id: entry
-                                objectName: "variable_" + ask.modelData.name
-                                visible: ask.kind === "textbox" || ask.kind === "library"
-                                Layout.fillWidth: true
-                                placeholderText: ask.kind === "library"
-                                                 ? "Search " + ask.modelData.library + " by name or description"
-                                                 : ask.modelData.hint
-                                Accessible.name: ask.modelData.label
-                                Accessible.description: ask.kind === "library" ? "Type to search, then pick an entry" : ""
-                                onTextEdited: if (ask.kind === "library") ask.search()
-                                onActiveFocusChanged: if (activeFocus && ask.kind === "library" && !ask.showing) ask.search()
-                                Keys.onEscapePressed: ask.showing = false
-                            }
-                            ComboBox {
-                                id: drop
-                                visible: ask.kind === "dropdown"
-                                Layout.preferredWidth: 300
-                                model: ["Choose..."].concat(ask.modelData.options)
-                                Accessible.name: ask.modelData.label
-                            }
-                            CheckBox {
-                                id: check
-                                visible: ask.kind === "checkbox"
-                                text: ask.modelData.label + (ask.modelData.description ? ": " + ask.modelData.description : "")
-                                Accessible.name: ask.modelData.label
-                            }
-
-                            // Matches for a library pick: names and descriptions only.
-                            Repeater {
-                                model: ask.kind === "library" && ask.showing ? ask.results : []
-                                delegate: ItemDelegate {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    text: modelData.name + (modelData.description ? "  -  " + modelData.description : "")
-                                    font.family: theme.fontFamily
-                                    font.pixelSize: theme.fontSize - 1
-                                    Accessible.name: modelData.name
-                                    onClicked: ask.pick(modelData.name)
-                                }
-                            }
-                            Text {
-                                visible: ask.kind === "library" && ask.showing
-                                text: ask.total === 0 ? "Nothing matches. Searches look at names and descriptions."
-                                      : (ask.total > ask.results.length
-                                         ? ask.results.length + " of " + ask.total + " shown; type more to narrow it." : "")
-                                color: theme.textMuted
-                                font.family: theme.fontFamily
-                                font.pixelSize: theme.fontSize - 1
-                                Layout.fillWidth: true
-                                wrapMode: Text.WordWrap
-                            }
-                        }
-                    }
                 }
 
                 Text {
@@ -388,61 +257,21 @@ Item {
                     spacing: 8
                     Layout.fillWidth: true
                     AppButton {
-                        text: "Fill in Edge"
-                        kind: "primary"
-                        enabled: !!page.bridge && !page.bridge.running && page.detail && page.detail.problems.length === 0
-                        onClicked: page.fill()
-                    }
-                    AppButton {
-                        text: "Dry run"
-                        enabled: !!page.bridge && !page.bridge.running
-                        onClicked: page.dryRun()
-                    }
-                    AppButton {
                         text: "Edit"
-                        enabled: !!page.bridge && !page.bridge.running
+                        kind: "primary"
                         onClicked: page.startEdit()
+                    }
+                    AppButton {
+                        text: "Submit this"
+                        kind: "ghost"
+                        enabled: page.detail && page.detail.problems.length === 0
+                        onClicked: navigation.go("heimdall:submit")
                     }
                     Item { Layout.fillWidth: true }
                     AppButton {
-                        text: "Stop"
-                        kind: "danger"
-                        visible: !!page.bridge && page.bridge.running
-                        onClicked: page.bridge.stop()
-                    }
-                    AppButton {
                         text: "Delete"
                         kind: "ghost"
-                        enabled: !!page.bridge && !page.bridge.running
                         onClicked: confirmDelete.open()
-                    }
-                }
-
-                Rectangle {
-                    visible: page.output.length > 0
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(220, outputText.implicitHeight + 20)
-                    radius: theme.radiusSmall
-                    color: theme.surfaceHigh
-                    border.color: page.runState === "failed" ? theme.error : theme.borderSoft
-                    border.width: 1
-
-                    ScrollView {
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        TextArea {
-                            id: outputText
-                            objectName: "fillOutput"
-                            text: page.output.join("\n")
-                            readOnly: true
-                            selectByMouse: true
-                            wrapMode: TextArea.Wrap
-                            color: theme.text
-                            font.family: theme.monoFamily
-                            font.pixelSize: theme.fontSize - 1
-                            background: null
-                            Accessible.name: page.runState === "plan" ? "Dry run" : "Fill progress"
-                        }
                     }
                 }
             }
@@ -455,7 +284,7 @@ Item {
                 Layout.fillHeight: true
                 title: page.creating ? "New template" : "Edit " + page.selected
                 subtitle: "Leave a field empty to leave it as it is on the form. Values may use $today or $today_us, "
-                          + "and ask for details when you fill: {NAME:TEXTBOX:\"Friendly name\"}, CHECKBOX(\"text\"), "
+                          + "and ask the submitter for details: {NAME:TEXTBOX:\"Friendly name\"}, CHECKBOX(\"text\"), "
                           + "DROPDOWN('a','b') or LIBRARY('name'). Write {{ for a brace."
 
                 function load(d) {

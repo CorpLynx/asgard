@@ -1332,7 +1332,7 @@ class SquashLinkTests(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# The window (spec build step 7): desk.py without a display, window.py with one
+# The desk: desk.py without a display, which the Qt pages call through baldur/ui_backend.py
 # --------------------------------------------------------------------------
 
 class DeskTests(MuninnCase):
@@ -1541,115 +1541,11 @@ class GitHubTests(MuninnCase):
             github.save_token("github.agency.gov", "two words")
 
 
-def _tk_root():
-    try:
-        import tkinter as tk
-        root = tk.Tk()
-    except Exception as exc:              # noqa: BLE001 - no display or no Tcl/Tk: skip
-        raise unittest.SkipTest(f"no Tk display here ({exc})") from None
-    root.withdraw()
-    return root
-
-
-class WindowTests(MuninnCase):
-    def setUp(self):
-        super().setUp()
-        from baldur import window
-        self.window_module = window
-        self.root = _tk_root()
-        self.addCleanup(self.root.destroy)
-        # A message box would wait for a click forever; record them instead.
-        self.boxes = []
-        for name in ("showwarning", "showerror", "showinfo"):
-            patcher = mock.patch.object(window.messagebox, name,
-                                        side_effect=lambda *a, _n=name, **k: self.boxes.append((_n, a)))
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        patcher = mock.patch.object(window.messagebox, "askyesno", return_value=True)
-        self.askyesno = patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def open(self, **kw):
-        kw.setdefault("load_settings", lambda: self.settings)
-        return self.window_module.BaldurWindow(self.root, synchronous=True, today=DAY + dt.timedelta(days=2),
-                                               dark=False, **kw)
-
-    def test_review_a_day_edit_a_figure_approve_and_copy(self):
-        self.worked_example()
-        w = self.open()
-        self.assertEqual(w.days.item(DAY.isoformat())["values"][:2], ["2h00m", "PROJ-42 1h30m, PROJ-51 30m"])
-        self.assertEqual(w.days.selection(), (DAY.isoformat(),), "opens on the latest day with work")
-        self.assertEqual(list(w.tickets.get_children()), ["PROJ-42", "PROJ-51"])
-        w.tickets.selection_set("PROJ-42")
-        w.edit_figure("1h45m")
-        self.assertEqual(w.tickets.item("PROJ-42")["values"][1], "1h45m (yours)")
-        w.edit_figure("not a time")                              # a warning; nothing changes
-        self.assertEqual(w.figures, {(DAY, "PROJ-42"): 105})
-        self.assertEqual([b[0] for b in self.boxes], ["showwarning"])
-        w.approve(confirm=False)
-        self.assertEqual({r["work_item_key"]: r["minutes_final"] for r in self.rows("approved")},
-                         {"PROJ-42": 105, "PROJ-51": 30})
-        self.assertEqual(w.figures, {})
-        self.assertIn("approved 1h45m", w.tickets.item("PROJ-42")["values"][3])
-        text = w.copy_timesheet()
-        self.assertIn("PROJ-42\t1h45m\t1.75 h", text)
-        self.assertEqual(self.root.clipboard_get(), text)
-
-    def test_changing_an_approved_figure_asks_first(self):
-        self.worked_example()
-        desk.approve_day(self.con, self.settings, DAY)
-        w = self.open()
-        w.tickets.selection_set("PROJ-51")
-        self.askyesno.return_value = False
-        w.edit_figure("45m")
-        self.assertEqual(len(self.rows("approved")), 2, "said no: nothing changed")
-        self.askyesno.return_value = True
-        w.edit_figure("45m")
-        self.assertIn("Odin posts the difference", self.askyesno.call_args[0][1])
-        self.assertEqual({r["work_item_key"]: r["minutes_final"] for r in self.rows("approved")},
-                         {"PROJ-42": 90, "PROJ-51": 45})
-
-    def test_weeks_and_a_broken_settings_file(self):
-        self.worked_example()
-        w = self.open()
-        w.move_week(-1)
-        self.assertEqual(w.monday, dt.date(2026, 9, 21))
-        self.assertEqual(list(w.tickets.get_children()), [])
-        w.this_week()
-        self.assertEqual(w.monday, dt.date(2026, 9, 28))
-        broken = config.Settings(warnings=["couldn't use baldur.json: Expecting value"], broken=True)
-        w2 = self.open(load_settings=lambda: broken)
-        self.assertIn("has a mistake in it", w2.status.cget("text"))
-        self.assertTrue(all(b.instate(["disabled"]) for b in w2.buttons))
-
-    def test_pull_requests_waiting_on_you(self):
-        review_only = self.con.execute("INSERT INTO repos (name, github_repo) VALUES ('portal', 'csb/portal') "
-                                       "RETURNING id").fetchone()[0]
-        now = muninn.utcnow()
-        self.con.execute("INSERT INTO pull_requests (repo_id, number, title, author, head_ref, state, review_requested, "
-                         "created_at, updated_at, url, first_seen_at, last_seen_at) VALUES (?, 31, 'Portal: PIV', 'lee', "
-                         "'feature/POR-1', 'open', 1, ?, ?, 'https://github.agency.gov/csb/portal/pull/31', ?, ?)",
-                         (review_only, now, now, now, now))
-        self.settings.values["github_api"] = config.github_api_url("github.agency.gov")
-        w = self.open()
-        with mock.patch.object(github, "load_token", return_value=None):
-            w.github_tick()
-        self.assertEqual([w.reviews.item(i)["text"] for i in w.reviews.get_children()], ["csb/portal#31"])
-        self.assertIn("1 review requested of you", w.reviews_label.cget("text"))
-        w.reviews.selection_set(w.reviews.get_children()[0])
-        with mock.patch("webbrowser.open") as opened:
-            self.assertEqual(w.open_review(), "https://github.agency.gov/csb/portal/pull/31")
-        opened.assert_called_once()
-        w.close = lambda: None              # the cleanup destroys the root
-
-    def test_problems_are_shown_not_raised(self):
-        w = self.open()
-        w.approve(confirm=False)                   # no day picked: nothing happens
-        self.assertEqual(self.boxes, [])
-        w.view = desk.DayView(DAY, "")
-        w.approve(confirm=False)                   # no commits, so nothing to approve
-        self.assertEqual([b[0] for b in self.boxes], ["showwarning"])
-        self.assertIn("Nothing to approve", w.status.cget("text"))
+# Baldur's window is Asgard's shared Qt window now (apps/baldur/ui/*.qml over baldur/ui_backend.py).
+# The tkinter window and its WindowTests were removed on 2026-10-11 once the Qt pages carried every
+# ability it had; those behaviours (edit a figure, change-approved asks first, weeks, pull requests
+# waiting, problems shown not raised) are tested in test_app_ui_backends.BaldurBackendTests and the
+# page-load checks in test_ui_qt. desk.py, exercised by DeskTests above, is what both used.
 
 
 # --------------------------------------------------------------------------

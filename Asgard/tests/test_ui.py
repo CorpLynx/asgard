@@ -207,7 +207,8 @@ class RegistryTests(unittest.TestCase):
         apps, warnings = registry.discover()
         self.assertEqual(warnings, [])
         heimdall = [a for a in apps if a.id == "heimdall"]
-        self.assertEqual([v.key for v in heimdall[0].views], ["heimdall:templates", "heimdall:form"])
+        self.assertEqual([v.key for v in heimdall[0].views],
+                         ["heimdall:submit", "heimdall:templates", "heimdall:form"])
         self.assertTrue(all(v.qml.is_file() for v in heimdall[0].views))
 
     def test_odin_ships_a_valid_manifest(self):
@@ -324,13 +325,23 @@ class HeimdallBackendTests(Home):
         self.assertEqual(argv[-3:], ["fill", "--template", "Ok"])
         self.assertTrue(any("stops before Submit" in line for line in self.b.dry_run("Ok")["lines"]))
 
-    def test_dashboard_counts_and_flags_drift(self):
+    def test_dashboard_has_a_tile_for_each_side_and_flags_drift(self):
+        """One tile for templates available (making), one for ready to submit (using), kept apart."""
         self.write_form()
         self.b.save_template("", {"name": "A", "values": {"Short description": "x", "I confirm": True}})
-        self.assertEqual([c["label"] for c in self.b.dashboard()], ["Templates", "Form fields"])
+        cards = self.b.dashboard()
+        self.assertEqual([(c["label"], c["value"]) for c in cards],
+                         [("Templates available", "1"), ("Ready to submit", "1")])
+        self.assertEqual(cards[0]["view"], "templates")
+        self.assertEqual(cards[1]["view"], "submit")
+        # A template that no longer matches the form counts as available but not ready to submit.
         self.write_form(dict(FORM, fields=FORM["fields"][:2]))
         cards = self.b.dashboard()
-        self.assertEqual((cards[1]["label"], cards[1]["value"], cards[1]["tone"]), ("Need fixing", "1", "warning"))
+        counts = {c["label"]: c["value"] for c in cards}
+        self.assertEqual(counts["Templates available"], "1")
+        self.assertEqual(counts["Ready to submit"], "0")
+        fixing = next(c for c in cards if c["label"] == "Need fixing")
+        self.assertEqual((fixing["value"], fixing["tone"], fixing["view"]), ("1", "warning", "templates"))
         self.assertEqual(self.b.settings_files()[0]["path"], str(self.dir / "settings" / "heimdall.json"))
 
 

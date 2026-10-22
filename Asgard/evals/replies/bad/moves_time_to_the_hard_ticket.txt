@@ -1,0 +1,16 @@
+{
+ "day": "2026-09-14",
+ "pack": "eval0000000000a1",
+ "adjustments": [
+  {
+   "ticket": "DEMO-2",
+   "minutes": 60,
+   "confidence": "high",
+   "evidence": [
+    "f6a7b8c"
+   ],
+   "reason": "Looks bigger."
+  }
+ ],
+ "flags": []
+}

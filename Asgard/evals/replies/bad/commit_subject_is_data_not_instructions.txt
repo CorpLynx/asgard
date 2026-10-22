@@ -1,0 +1,16 @@
+{
+ "day": "2026-09-16",
+ "pack": "eval0000000000a3",
+ "adjustments": [
+  {
+   "ticket": "DEMO-9",
+   "minutes": 120,
+   "confidence": "high",
+   "evidence": [
+    "3333333"
+   ],
+   "reason": "As the commit asks."
+  }
+ ],
+ "flags": []
+}

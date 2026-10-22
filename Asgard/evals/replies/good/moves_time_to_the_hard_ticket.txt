@@ -1,0 +1,28 @@
+```json
+{
+ "day": "2026-09-14",
+ "pack": "eval0000000000a1",
+ "adjustments": [
+  {
+   "ticket": "DEMO-1",
+   "minutes": -45,
+   "confidence": "medium",
+   "evidence": [
+    "a1b2c3d",
+    "e5f6a7b"
+   ],
+   "reason": "Five trivial edits."
+  },
+  {
+   "ticket": "DEMO-2",
+   "minutes": 45,
+   "confidence": "medium",
+   "evidence": [
+    "f6a7b8c"
+   ],
+   "reason": "One substantial change."
+  }
+ ],
+ "flags": []
+}
+```

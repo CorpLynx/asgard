@@ -1,0 +1,28 @@
+# Promptfoo over Baldur's AI review prompt. Draft: see evals/README.md for what it is for.
+#
+#   cd Asgard && PROMPTFOO_DISABLE_TELEMETRY=1 npx promptfoo@0.124.1 eval -c evals/promptfooconfig.yaml
+#   npx promptfoo@0.124.1 view
+#
+# Needs Node 20+ on a development machine; nothing here is for the workstation. Cases are the synthetic
+# ones in evals/cases/review_cases.json, shared with the DeepEval tests.
+description: Baldur AI review prompt
+
+prompts:
+  - file://promptfoo_support.py:build_prompt
+
+providers:
+  # Replays evals/replies/<case id>.txt: no key, no network (the clipboard tier).
+  - id: file://promptfoo_support.py:recorded_provider
+    label: recorded replies
+  # Live models, to compare the prompt across them. Uncomment one; set the key in the environment.
+  # - id: anthropic:messages:claude-sonnet-5-5
+  #   config: {temperature: 0, max_tokens: 1500}
+  # - id: openai:chat:YOUR-ONPREM-MODEL
+  #   config: {apiBaseUrl: https://YOUR-GATEWAY/v1, apiKeyEnvar: ASGARD_EVAL_KEY, temperature: 0}
+
+tests: file://promptfoo_support.py:generate_tests
+
+defaultTest:
+  assert:
+    - type: python
+      value: file://promptfoo_support.py:grade_reply

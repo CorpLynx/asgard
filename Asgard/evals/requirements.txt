@@ -1,0 +1,6 @@
+# Dev only: the eval harness (evals/README.md). Never shipped, never imported by asgard/ or apps/,
+# and not part of Asgard's requirements.txt (so tests/test_dependencies.py and MODULES.md don't apply).
+# DeepEval: the pytest-style runner and metrics. Pure Python, but it pulls in a large tree
+# (openai, grpc, opentelemetry, ...) and sends telemetry unless DEEPEVAL_TELEMETRY_OPT_OUT=YES.
+# Approval status: not for the workstation. Run it on a development machine with synthetic data only.
+deepeval==4.3.1

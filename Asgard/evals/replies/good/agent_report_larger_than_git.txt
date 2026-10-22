@@ -1,0 +1,8 @@
+{
+ "day": "2026-09-18",
+ "pack": "eval0000000000a5",
+ "adjustments": [],
+ "flags": [
+  "Report r1 says 3h; git shows about 1h. Left at git's figure."
+ ]
+}

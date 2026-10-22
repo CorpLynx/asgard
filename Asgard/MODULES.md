@@ -82,7 +82,7 @@ Nothing right now. A package is pinned, and gets its section above, in the chang
 
 ## Dev only (never shipped)
 
-These come from the repo's `requirements-dev.txt` and are never needed to run Asgard: `pytest`, `pytest-timeout`, `pytest-cov` (the plain `python -m unittest discover -s tests` runs the same tests), `ruff` (lint), `vermin` (Python-version check) and `actionlint-py` (the workflows), each pinned exactly; CI installs the same file (`.github/workflows/checks.yml`). Asgard's tests use only `unittest`; the Playwright and PySide6 tests skip when those aren't installed.
+These come from the repo's `requirements-dev.txt` and are never needed to run Asgard: `pytest`, `pytest-timeout`, `pytest-cov` (the plain `python -m unittest discover -s tests` runs the same tests), `ruff` (lint), `vermin` (Python-version check) and `actionlint-py` (the workflows), each pinned exactly; CI installs the same file (`.github/workflows/checks.yml`). The eval drafts (`evals/`) have their own `evals/requirements.txt` (`deepeval==4.3.1`; Promptfoo runs through `npx`, pinned in its README) and are never installed on the workstation or imported by `asgard/` or `apps/`. Asgard's tests use only `unittest`; the Playwright and PySide6 tests skip when those aren't installed.
 
 ## Adding a package
 

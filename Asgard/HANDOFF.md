@@ -1,5 +1,19 @@
 # Asgard handoff (2026-10-10, Asgard 0.4.0 in progress, not shipped)
 
+## Latest (2026-10-22, later): eval drafts and a changelog
+- **`evals/` (draft, dev only).** Five synthetic Baldur review cases (`cases/review_cases.json`), graded by `grading.grade()` = `check_review` plus per-case expectations, so a pass means Baldur would store the reply. DeepEval (`test_review_deepeval.py`, pinned `deepeval==4.3.1` in `evals/requirements.txt`) and Promptfoo (`promptfooconfig.yaml`, `npx promptfoo@0.124.1`) share them. Both ran here against recorded replies: `replies/good` all pass, `replies/bad` all fail. `tests/test_evals_grading.py` runs the grader in the ordinary suite. Not run: any live model, the GEval judge test, CI. `evals/README.md` says whether to keep both (recommendation: DeepEval if one).
+- **`CHANGELOG.md`.** Drafted from git history since `VERSION` last changed (Oct 5) and this file. Its "On-prem only" section is **empty on purpose**: the on-prem copy has changes this repo doesn't, and I haven't seen them. The owner lists them from the workstation; "Reconciling" in the file says how. `docs/dependency-policy.md` (linked from `AGENTS.md`) is missing here and probably on-prem only.
+
+## Latest (2026-10-22): a notifications module, wired into Baldur, Odin and Heimdall
+Not committed. **Not yet seen on a Windows desktop**: it needs the owner's trial like the other Windows pieces.
+
+- **`asgard/notify.py`** (standard library; in `test_dependencies.STARTUP`, so it stays that way). Apps declare events in `apps/<id>/notify.json` (the `ui/manifest.json` pattern: JSON discovery, a broken manifest skips only that app) and call `notify.send(app, event, text, key=...)`. `send` checks the person's choices (`settings/notifications.json`: master switch, quiet hours, muted apps and events), drops a repeat of the same event and key inside the event's `repeat_minutes` (`settings/notify-state.json`), then shows it. It returns an `Outcome` and never raises. `asgard notify list|on|off|quiet|test` (`asgard/notifycli.py`) edits the choices.
+- **Windows backend: `Shell_NotifyIconW` balloon through ctypes** (a message-only STATIC window, an icon, `NIF_INFO`, held 4 s, removed). Chosen because Odin's `config.py` rules out WinRT toasts (Constrained Language Mode), BurntToast and mshta, and this needs no PowerShell, no module, no helper program, no admin. **Unverified on Windows**: check that a balloon shows as a toast on Windows 11, that Focus assist behaves, and that holding 4 s at the end of Odin's daily run is fine. macOS (`osascript`) and Linux (`notify-send`) backends exist so development machines work; the macOS one was seen working.
+- **Wired:** Baldur `refresh --quiet` (the scheduled run, so installed tasks need no change): `days_waiting`, `review_requested`, `auto_approved`, `refresh_problem`. Odin `_finish`/`_record_failure`: `days_posted`, `run_failed` (at `notify.alert_after_failures`, like the Desktop file alert, which is unchanged). Heimdall `fill`: `fill_ready`, `fill_failed`.
+- **Tests never reach the screen:** `OdinTestCase` installs a recording backend (`self.notices`); other tests that go through a wired path set their own with `notify.set_backend`. A new wired path needs the same.
+- **Not done:** the Settings page has no notification toggles yet (the CLI and the JSON file do it); `manifest.json` could grow a `notifications` hook the way `settings_schema()` works. Ysildir raises nothing. Clicking a notification does nothing (the balloon has no callback into the app).
+- `asgard notify` is in `cli.COMMANDS`, `GLOBALS`, `packaging/frozen_main.DISPATCH_WORDS` and the Baldur agent guard's `DISPATCH_WORDS` (a test keeps the lists equal).
+
 ## Latest (2026-10-11, last): Baldur's tile opens the Qt window; Heimdall's GUI split in two
 Found on the workstation: Baldur's tile still opened the old tkinter GUI, and Heimdall mixed making templates with submitting them. Both fixed.
 

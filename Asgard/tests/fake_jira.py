@@ -21,7 +21,7 @@ for folder in (ROOT, APP):
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
-from asgard import muninn  # noqa: E402
+from asgard import muninn, notify  # noqa: E402
 from odin.jira import JiraError  # noqa: E402
 
 BASE_URL = "https://jira.example.gov"
@@ -263,6 +263,10 @@ class OdinTestCase(unittest.TestCase):
         self._saved_home = os.environ.get("ASGARD_HOME")
         os.environ["ASGARD_HOME"] = str(self.home)
         self.addCleanup(self._restore_home)
+        # Odin's runs raise desktop notifications; record them here instead of popping up on the developer's screen.
+        self.notices = []
+        notify.set_backend(lambda title, text, level: self.notices.append((title, text, level)))
+        self.addCleanup(notify.set_backend, None)
         # main() logs to odin.log in the temporary folder; Windows can't delete the folder while that
         # file is open, so the handlers are closed before it goes (cleanups run last-in, first-out).
         self.addCleanup(self._close_odin_log)

@@ -63,7 +63,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 if sys.version_info < (3, 9):  # pragma: no cover
     sys.exit("Odin needs Python 3.9 or newer (3.11 or newer for Muninn on Windows).")
 
-from asgard import muninn  # noqa: E402
+from asgard import muninn, notify  # noqa: E402
 from asgard.muninn import odin as mo  # noqa: E402
 
 from . import __version__, collect, history, posting, store  # noqa: E402
@@ -420,7 +420,20 @@ def _finish(cfg: Dict[str, Any], data_dir: Path, out: Outcome) -> int:
     else:
         write_alert(cfg, data_dir, summary=f"The last Odin run ({out.command}) finished with {len(errors)} error(s).",
                     detail=errors[0], consecutive_failures=streak)
+    _notify_outcome(cfg, out, exit_code, streak)
     return exit_code
+
+
+def _notify_outcome(cfg: Dict[str, Any], out: Outcome, exit_code: int, streak: int) -> None:
+    """Desktop notifications for a finished run (asgard/notify.py). Counts only: no summaries or keys."""
+    if exit_code != 0:
+        threshold = max(1, int((cfg.get("notify") or {}).get("alert_after_failures") or 1))
+        if streak >= threshold:
+            notify.send("odin", "run_failed", f"The last run ({out.command}) failed: odin status says more.")
+        return
+    posted = len(out.posts.posted) if out.posts else 0
+    if posted:
+        notify.send("odin", "days_posted", f"Posted {posted} approved {'day' if posted == 1 else 'days'} to Jira.")
 
 
 def _record_failure(cfg: Dict[str, Any], data_dir: Path, out: Outcome, exc: BaseException) -> None:
@@ -436,6 +449,7 @@ def _record_failure(cfg: Dict[str, Any], data_dir: Path, out: Outcome, exc: Base
     detail = "stopped by Ctrl+C or a stop request" if isinstance(exc, KeyboardInterrupt) else (str(exc) or type(exc).__name__)
     write_alert(cfg, data_dir, summary=f"The last Odin run ({out.command}) stopped before it finished.",
                 detail=detail, consecutive_failures=streak)
+    _notify_outcome(cfg, out, 2, streak)
 
 
 def cmd_daily(args: argparse.Namespace) -> int:

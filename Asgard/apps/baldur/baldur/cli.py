@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from asgard import muninn, paths
+from asgard import muninn, notify, paths
 from asgard.muninn import baldur as approvals
 
 from . import agents, assist, auto, calibrate, collect, desk, github, gitread, report, store
@@ -262,6 +262,7 @@ def cmd_refresh(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
               f"{store.plural(len(changed), 'proposal')} new or changed.")
         print(f"{waiting} {'day' if waiting == 1 else 'days'} waiting for you: asgard baldur days")
 
+    requests = 0
     if s.github_host():
         try:
             sync = desk.sync_github(con, s)
@@ -273,6 +274,7 @@ def cmd_refresh(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
                 problems.append("GitHub is on but no token is saved: asgard baldur github token")
             else:
                 problems.extend(sync.problems)
+                requests = sync.requests
                 if not args.quiet:
                     print(f"Checked GitHub: {store.plural(sync.requests, 'review')} asked of you.")
 
@@ -293,9 +295,28 @@ def cmd_refresh(con: sqlite3.Connection, s: config.Settings, args: argparse.Name
 
     _log(f"refresh: {len(collected.repos)} repositories, {store.plural(new, 'new commit')}, "
          f"{waiting} day(s) waiting, {approved} auto-approved" + "".join(f"; {p}" for p in problems))
+    if args.quiet:      # the scheduled task: nobody is watching, so tell them what is worth knowing
+        _notify_refresh(waiting, requests, approved, problems)
     for problem in problems:
         print(f"Baldur: {problem}", file=sys.stderr)
     return 1 if problems else 0
+
+
+def _notify_refresh(waiting: int, requests: int, approved: int, problems: List[str]) -> None:
+    """Desktop notifications after a scheduled refresh. Counts and plain words only (asgard/notify.py)."""
+    if waiting:
+        notify.send("baldur", "days_waiting", f"{store.plural(waiting, 'day')} waiting for your review.",
+                    key=str(waiting))
+    if requests:
+        notify.send("baldur", "review_requested", f"{store.plural(requests, 'GitHub review')} asked of you.",
+                    key=str(requests))
+    if approved:
+        notify.send("baldur", "auto_approved",
+                    f"Auto-approve approved {store.plural(approved, 'day')}; Odin will post them.")
+    if problems:
+        notify.send("baldur", "refresh_problem",
+                    f"The refresh had {store.plural(len(problems), 'problem')}: asgard baldur refresh shows them.",
+                    key=str(len(problems)))
 
 
 APPLY_WARNING = (

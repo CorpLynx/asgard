@@ -63,6 +63,7 @@ COMMANDS: Dict[str, str] = {
     "version": "which Asgard this is, and where it runs from",
     "selftest": "check that every part of the packaged build loads on this computer",
     "ui": "open Asgard's window (--app ID: just that app's pages)",
+    "notify": "choose what Asgard tells you about (list, on, off, quiet, test)",
 }
 HELP_WORDS = ("-h", "--help", "help", "/?")
 
@@ -304,6 +305,11 @@ def run_selftest(args: List[str], selftest: Optional[Callable[..., int]] = None)
     return _code(selftest(skip=skip))
 
 
+def run_notify(args: List[str]) -> int:
+    from asgard import notifycli
+    return call(lambda argv: notifycli.main(argv, prog=f"{PROG} notify"), args)
+
+
 def run_ui(args: List[str]) -> int:
     import argparse
     parser = argparse.ArgumentParser(prog=f"{PROG} ui", description="Open Asgard's desktop window.")
@@ -318,7 +324,7 @@ def run_ui(args: List[str]) -> int:
 
 GLOBALS: Dict[str, Callable[[List[str]], int]] = {
     "muninn": run_muninn, "install": run_install, "uninstall": run_uninstall, "version": run_version,
-    "ui": run_ui,
+    "ui": run_ui, "notify": run_notify,
 }
 
 

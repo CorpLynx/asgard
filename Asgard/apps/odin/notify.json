@@ -1,0 +1,10 @@
+{
+  "app": "odin",
+  "name": "Odin",
+  "events": [
+    {"id": "days_posted", "label": "Odin posted days you approved in Baldur to Jira",
+     "default": true, "level": "info"},
+    {"id": "run_failed", "label": "A run failed (after the failures set in Odin's notify settings)",
+     "default": true, "level": "error", "repeat_minutes": 240}
+  ]
+}

@@ -194,7 +194,7 @@ def self_test(out: Callable[[str], None] = print, skip: Sequence[str] = ()) -> i
 # The first words the asgard command knows (asgard/cli.py: its apps, its commands and help). Kept here
 # so this entry point decides without importing Asgard's code first.
 DISPATCH_WORDS = ("baldur", "heimdall", "odin", "ysildir", "muninn", "install", "uninstall", "version",
-                  "selftest", "ui", "help", "-h", "--help", "/?", "--version", "-v")
+                  "selftest", "ui", "notify", "help", "-h", "--help", "/?", "--version", "-v")
 LAUNCHER_OPTIONS = ("--uninstall", "--muninn")     # Asgard.pyw's own: Settings > Apps runs these
 
 

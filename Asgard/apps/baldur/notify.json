@@ -1,0 +1,14 @@
+{
+  "app": "baldur",
+  "name": "Baldur",
+  "events": [
+    {"id": "days_waiting", "label": "Days are waiting for your review after a scheduled refresh",
+     "default": true, "level": "info", "repeat_minutes": 720},
+    {"id": "review_requested", "label": "Someone asked you for a GitHub review",
+     "default": true, "level": "info", "repeat_minutes": 720},
+    {"id": "auto_approved", "label": "A scheduled refresh approved days by itself",
+     "default": true, "level": "warning"},
+    {"id": "refresh_problem", "label": "A scheduled refresh had a problem",
+     "default": true, "level": "error", "repeat_minutes": 720}
+  ]
+}

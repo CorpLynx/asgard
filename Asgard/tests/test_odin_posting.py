@@ -63,10 +63,12 @@ class PostingCase(OdinTestCase):
         with muninn.Run(self.con, store.APP, self.sid, "post-check") as run:
             return settled, posting.post_approved(self.con, self.jira, cap, run=run, ctx=ctx)
 
-    def run_cli(self, *argv, jira=None, settings=None):
+    def run_cli(self, *argv, jira=None, settings=None, alert_after=None):
         cfg = {"jira": {"base_url": "https://jira.example.gov", "default_parent": "PROJ-123", "assign_to_me": True,
                         "log_work": True},
                "filters": {"only_ended": False}, "notify": {"desktop_alert": False}}
+        if alert_after:
+            cfg["notify"]["alert_after_failures"] = alert_after
         if settings:
             cfg["muninn"] = settings
         path = self.data / "config.json"
@@ -232,6 +234,30 @@ class CommandTests(PostingCase):
         self.approve()
         self.assertEqual(self.run_cli("post"), 0)
         self.assertEqual((self.post_checks(), len(self.jira.posted)), (1, 1))
+
+    def test_posting_a_day_raises_days_posted(self):
+        self.approve()
+        self.assertEqual(self.run_cli("post"), 0)
+        [(title, text, level)] = self.notices
+        self.assertEqual((title, level), ("Odin", "info"))
+        self.assertIn("1 approved day", text)
+        self.notices.clear()
+        self.assertEqual(self.run_cli("post"), 0)
+        self.assertEqual(self.notices, [], "a run that posts nothing says nothing")
+
+    def test_run_failed_waits_for_the_configured_streak(self):
+        def fail():
+            with mock.patch("odin.cli.collect.sync_worklogs", side_effect=KeyError("worklogs")), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                return self.run_cli("post", alert_after=2)
+
+        self.approve()
+        self.assertEqual(fail(), 2)
+        self.assertEqual(self.notices, [], "one failure is under the threshold")
+        self.assertEqual(fail(), 2)
+        [(title, text, level)] = self.notices
+        self.assertEqual((title, level), ("Odin", "error"))
+        self.assertIn("post", text)
 
     def test_post_dry_run(self):
         self.approve()

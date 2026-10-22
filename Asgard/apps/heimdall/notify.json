@@ -1,0 +1,10 @@
+{
+  "app": "heimdall",
+  "name": "Heimdall",
+  "events": [
+    {"id": "fill_ready", "label": "The form is filled in Edge and waiting for you to check and submit",
+     "default": true, "level": "info"},
+    {"id": "fill_failed", "label": "Filling the form failed",
+     "default": true, "level": "error"}
+  ]
+}

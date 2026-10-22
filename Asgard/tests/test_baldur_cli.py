@@ -25,7 +25,7 @@ for folder in (ROOT, ROOT / "apps" / "baldur", ROOT / "tests"):
         sys.path.insert(0, str(folder))
 
 import fake_github as f  # noqa: E402
-from asgard import muninn, paths  # noqa: E402
+from asgard import muninn, notify, paths  # noqa: E402
 from baldur import cli, github  # noqa: E402
 from baldur import settings as config  # noqa: E402
 from test_baldur import DAY, CollectBase, MuninnCase, t  # noqa: E402
@@ -455,6 +455,22 @@ class RefreshTests(CollectBase, CliCase):
         self.assertEqual(self.cli("refresh", "--quiet"), 0, self.err)
         self.assertEqual(self.out, "")
         self.assertEqual(self.err, "")
+
+    def test_a_scheduled_refresh_tells_the_person_how_many_days_wait(self):
+        notices = []
+        notify.set_backend(lambda title, text, level: notices.append((title, text, level)))
+        self.addCleanup(notify.set_backend, None)
+        self.worked_repo()
+        self.setup_baldur(repo_roots=[str(self.dir / "src")])
+        self.assertEqual(self.cli("refresh", "--days", "366"), 0, self.err)
+        self.assertEqual(notices, [], "a refresh someone is watching raises nothing")
+        waiting = self.con.execute("SELECT count(DISTINCT local_date) FROM day_proposals WHERE status = 'proposed' "
+                                   "AND work_item_key IS NOT NULL").fetchone()[0]
+        self.assertTrue(waiting)
+        self.assertEqual(self.cli("refresh", "--quiet", "--days", "366"), 0, self.err)
+        [(title, text, level)] = notices
+        self.assertEqual((title, level), ("Baldur", "info"))
+        self.assertIn(f"{waiting} day", text)
 
     def test_a_repository_that_fails_is_reported_and_the_estimate_still_runs(self):
         self.worked_repo()

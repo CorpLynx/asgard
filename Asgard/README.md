@@ -61,7 +61,7 @@ Every app, and Asgard's own upkeep, runs from one command in any Command Prompt 
 asgard --help                      the apps and Asgard's own commands
 asgard <app> --help                that app's commands (baldur, heimdall, odin, ysildir)
 asgard <app> <command> [args]      for example: asgard baldur collect
-asgard <command> [args]            muninn, install, uninstall, version, selftest, ui
+asgard <command> [args]            muninn, install, uninstall, version, selftest, ui, notify
 ```
 
 Setup writes `asgard.cmd` into `%LOCALAPPDATA%\Asgard\bin` and adds that folder to your own Path (no admin rights; the machine Path isn't touched). Open a new terminal after setup to pick it up. If your Path couldn't be changed, setup says so, and `"%LOCALAPPDATA%\Asgard\bin\asgard.cmd"` works by its full path. In the packaged build, `asgard-cli.exe` in `%LOCALAPPDATA%\Asgard\app` takes the same commands (`asgard-cli.exe baldur collect`).
@@ -330,6 +330,20 @@ Your colour and text-size choices are in `%LOCALAPPDATA%\Asgard\settings\ui.json
 
 Any token can be set for every app (`theme`) or one app (`apps`), in both modes or just `light` or `dark`. Colours: `background`, `surface`, `surfaceHigh`, `sidebar`, `border`, `borderSoft`, `text`, `textMuted`, `textDim`, `accent`, `success`, `warning`, `error`. Sizes: `fontSize`, `radiusSmall`, `radiusMedium`, `radiusLarge`, `sidebarWidth`, `spacing`. Fonts: `fontFamily`, `monoFamily`. A bad value is ignored with a warning on the Settings page; if the file can't be read at all, the window uses the defaults and won't overwrite it.
 
+## Notifications
+
+Scheduled runs have nobody watching, so Asgard can tell you with a Windows notification (the notification area, then the Action Center). Each app lists what it can tell you in `apps/<id>/notify.json`; `asgard notify list` shows them all:
+
+```
+asgard notify list                   every event, and whether it is on
+asgard notify off odin               mute an app (on to undo); asgard notify off baldur.days_waiting mutes one event
+asgard notify off                    mute everything (asgard notify on to undo)
+asgard notify quiet 18:00 08:00      nothing shown in between (asgard notify quiet off)
+asgard notify test                   show one now, to check this computer can
+```
+
+What fires today: Baldur's scheduled refresh (days waiting, GitHub reviews asked of you, days auto-approved, a problem), Odin's run (days posted to Jira, a run that failed after the failures set in `notify.alert_after_failures`) and Heimdall (the form filled and waiting for you, or the fill failed). The same news isn't shown twice inside its repeat window (12 hours for "days waiting" while the count is unchanged), and a notification held back by quiet hours or a mute is dropped, not saved for later. They carry counts and plain words only, never Jira summaries, commit text or tokens. Your choices are in `%LOCALAPPDATA%\Asgard\settings\notifications.json`, which you can edit by hand; a file that can't be read is left alone and the defaults apply. Odin's Desktop file alert (`ATTENTION-Odin.txt`) is unchanged and still the fallback when a notification can't be shown.
+
 ## Changing your tiles
 
 Your tile settings live in `%LOCALAPPDATA%\Asgard\apps.local.json`. Open it from the **...** menu with **Edit my tiles**. Setup never overwrites it. Save the file, then press F5 in Asgard.
@@ -404,6 +418,7 @@ Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, **... > Uni
 | `%LOCALAPPDATA%\Asgard\settings\baldur.json` | Baldur's settings |
 | `%LOCALAPPDATA%\Asgard\settings\ysildir.json` | Which Ysildir tools your AI client may use (`asgard ysildir tools`). No file means the defaults; a file Ysildir can't read leaves only `asgard_guide` on |
 | `%LOCALAPPDATA%\Asgard\settings\ui.json` | Your choices for the shared window: mode, text size, colours |
+| `%LOCALAPPDATA%\Asgard\settings\notifications.json` | Your notification choices: the master switch, quiet hours, muted apps and events (`asgard notify`). `notify-state.json` beside it remembers what was shown, so a repeat isn't |
 | `%LOCALAPPDATA%\Asgard\settings\heimdall.json` | Heimdall's form file: the security change catalog item, its fields, and the user name to sign in with. Never a password |
 | `%LOCALAPPDATA%\Asgard\settings\heimdall-templates.json` | Your Heimdall templates. Heimdall won't overwrite this file if it can't read it. It's version 2 since template variables; Heimdall reads version 1 and writes version 2 the next time you change a template, so an older Heimdall can't read it after that |
 | `%LOCALAPPDATA%\Asgard\heimdall\libraries` | The libraries Heimdall imported, one `.library` file each, encrypted with DPAPI for your Windows account |
@@ -411,6 +426,22 @@ Use the **Valhalla** tile, **Settings > Apps > Asgard > Uninstall**, **... > Uni
 | `%LOCALAPPDATA%\Asgard\heimdall\edge-profile` | The Edge profile Heimdall signs in with; delete it to sign out. Traces from `--trace` go in `heimdall\traces` |
 
 To upgrade, download the new zip and run setup again. Your tile settings stay. Close Asgard first. The packaged build upgrades the same way: run the new download's setup.
+
+## Notifications, for app authors
+
+Declare what your app can tell the person in `apps/<id>/notify.json` (the app id must match the folder), then raise an event where it happens:
+
+```json
+{"app": "myapp", "name": "MyApp", "events": [
+  {"id": "report_ready", "label": "A report is ready", "default": true, "level": "info", "repeat_minutes": 720}]}
+```
+
+```python
+from asgard import notify
+notify.send("myapp", "report_ready", "3 reports are ready.", key="3")
+```
+
+`send` returns an `Outcome` (`bool(outcome)` is whether it was shown, `outcome.reason` says why not) and never raises. Rules: send counts and plain words, never content; pick a `key` that changes when the news does, so a poll tells the person once; an event nobody declared is refused; send only where the person isn't already looking (Baldur notifies on `refresh --quiet`, the scheduled run, not a refresh typed at a console). On Windows the call holds for about 4 seconds so the balloon shows, so from a window pass `wait=False`. In tests, `notify.set_backend(fn)` takes `fn(title, text, level)` so nothing reaches the screen; `ASGARD_NOTIFY=off` shows nothing and `log` only logs.
 
 ## Muninn, for app authors
 

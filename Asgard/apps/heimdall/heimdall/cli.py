@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
-from asgard import secrets
+from asgard import notify, secrets
 
 from . import auth, browser   # browser imports Playwright only inside browser.run()
 from . import form as forms
@@ -273,7 +273,9 @@ def cmd_fill(args: argparse.Namespace) -> int:
         browser.run(form, the_plan, lambda m: _say(f"heimdall: {m}"), trace=args.trace)
     except browser.BrowserError as exc:
         print(f"Heimdall: {exc}", file=sys.stderr)
+        notify.send("heimdall", "fill_failed", "Filling the form failed: see the Heimdall window or console.")
         return 1
+    notify.send("heimdall", "fill_ready", "The form is filled in Edge. Check it and submit.")
     return 0
 
 

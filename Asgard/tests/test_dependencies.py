@@ -17,7 +17,7 @@ REQUIREMENTS = ROOT / "requirements.txt"
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._\-]*)(\[[A-Za-z0-9,._\-]+\])?==[A-Za-z0-9.+!_\-]+(\s*;.*)?$")
 # What the launcher needs to open its window, show an error, install and uninstall.
 STARTUP = ("__init__.py", "paths.py", "jsonfile.py", "launcher.py", "catalog.py", "install.py", "valhalla.py",
-           "runner.py", "winutil.py", "cli.py", "shim.py")
+           "runner.py", "winutil.py", "cli.py", "shim.py", "notify.py")
 # Import names that differ from the package name on PyPI.
 IMPORT_NAMES = {"pyyaml": "yaml", "pywin32": "win32api", "python_dateutil": "dateutil",
                 "pyside6_essentials": "PySide6"}
@@ -106,12 +106,12 @@ class DependencyTests(unittest.TestCase):
                     continue
                 for name in names:
                     top = name.split(".")[0]
-                    # Only the standard-library parts of Asgard: Muninn, paths and jsonfile (every one
+                    # Only the standard-library parts of Asgard: Muninn, paths, jsonfile and notify (every one
                     # of them is in STARTUP above, so the test over it keeps them that way). Never
                     # asgard.ui, which needs PySide6.
                     if top not in allowed or (top == "asgard"
                                               and not name.startswith(("asgard.muninn", "asgard.paths",
-                                                                       "asgard.jsonfile"))):
+                                                                       "asgard.jsonfile", "asgard.notify"))):
                         offenders.append(f"{path.relative_to(ROOT)}: {name}")
         self.assertGreater(len(files), 10)
         self.assertEqual(offenders, [], "Odin's daily run stays standard library (AGENTS.md); the window may not")

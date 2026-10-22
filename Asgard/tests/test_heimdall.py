@@ -17,7 +17,8 @@ for folder in (ROOT, ROOT / "apps" / "heimdall"):
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
-from heimdall import cli  # noqa: E402
+from asgard import notify  # noqa: E402
+from heimdall import browser, cli  # noqa: E402
 from heimdall import form as forms  # noqa: E402
 from heimdall import templates as tpl  # noqa: E402
 
@@ -264,6 +265,31 @@ class FillPlanTests(Base):
         code, _, err = self.run_cli("fill", "--json", "--set", "Short description=x")
         self.assertEqual(code, 2)
         self.assertIn("--dry-run", err)
+
+
+class NotificationTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.notices = []
+        notify.set_backend(lambda title, text, level: self.notices.append((title, text, level)))
+        self.addCleanup(notify.set_backend, None)
+
+    def test_a_filled_form_says_it_is_ready(self):
+        with mock.patch.object(browser, "run") as run:
+            self.ok("fill", "--set", "Short description=x")
+        run.assert_called_once()
+        [(title, _, level)] = self.notices
+        self.assertEqual((title, level), ("Heimdall", "info"))
+
+    def test_a_failed_fill_says_so_and_still_fails(self):
+        with mock.patch.object(browser, "run", side_effect=browser.BrowserError("Edge wasn't found.")):
+            self.fails("fill", "--set", "Short description=x")
+        [(title, _, level)] = self.notices
+        self.assertEqual((title, level), ("Heimdall", "error"))
+
+    def test_a_dry_run_raises_nothing(self):
+        self.ok("fill", "--dry-run", "--set", "Short description=x")
+        self.assertEqual(self.notices, [])
 
 
 class BoundaryTests(Base):

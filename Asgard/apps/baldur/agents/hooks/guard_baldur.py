@@ -37,7 +37,7 @@ OTHER_APPS = ("heimdall", "ysildir", "odin", "bifrost", "freya", "loki")
 # python -m asgard.cli. Its first word that isn't an option names what runs.
 DISPATCHER_NAMES = {"asgard", "asgard.cmd", "asgard.bat", "asgard.exe", "asgard-cli", "asgard-cli.exe"}
 DISPATCH_WORDS = {"baldur", "heimdall", "odin", "ysildir", "muninn", "install", "uninstall", "version",
-                  "selftest", "ui"}
+                  "selftest", "ui", "notify"}
 MUNINN_FILE = re.compile(r"muninn\.db", re.I)
 ASGARD_DB = re.compile(r"asgard[\\/][^\s\"']*\.db\b", re.I)          # any database file in Asgard's folder
 SETTINGS_FILE = re.compile(r"baldur\.json", re.I)

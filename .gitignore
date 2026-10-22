@@ -42,3 +42,6 @@ Asgard/build/
 
 # Local ServiceNow scratch script; holds credentials, never commit
 Asgard/apps/heimdall/heimdall/snow_test.py
+
+# Separate repo (CorpLynx/atlassian-stack), kept alongside but not part of this one
+infra/atlassian-stack/
